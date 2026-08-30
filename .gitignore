@@ -1,0 +1,4 @@
+vendor/
+sandbox/
+__pycache__/
+*.pyc
