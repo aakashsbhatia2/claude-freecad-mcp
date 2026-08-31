@@ -1,50 +1,20 @@
-"""The operations the model is allowed to perform.
+"""Tools that only look at the document."""
 
-Read-only so far: look at the document, the selection, and one object's size
-and position. Steps 6 to 9 add the tools that change things.
-
-Everything here runs on the GUI thread -- FreeCAD documents are not safe to
-touch from a worker.
-"""
-
-import FreeCAD
 import FreeCADGui
+
+from ai_cad.util import document, find, rounded, vector
 
 # Origin planes and axes are in every Body and only add noise.
 NOISE = ("App::Origin", "App::Plane", "App::Line", "App::LocalCoordinateSystem")
 
 
-def _document():
-    return FreeCAD.ActiveDocument
-
-
-def _round(value, places=2):
-    return round(float(value), places)
-
-
-def _vector(vec, places=2):
-    return "(%s, %s, %s)" % (_round(vec.x, places), _round(vec.y, places), _round(vec.z, places))
-
-
-def _find(name):
-    """Objects can be addressed by internal name or by the label in the tree."""
-    document = _document()
-    if document is None:
-        return None
-    obj = document.getObject(name)
-    if obj is not None:
-        return obj
-    matches = document.getObjectsByLabel(name)
-    return matches[0] if matches else None
-
-
 def list_objects(_arguments):
-    document = _document()
-    if document is None:
+    doc = document()
+    if doc is None:
         return "No document is open."
 
     lines = []
-    for obj in document.Objects:
+    for obj in doc.Objects:
         if obj.TypeId in NOISE:
             continue
         line = "%s (%s)" % (obj.Label, obj.TypeId)
@@ -53,37 +23,37 @@ def list_objects(_arguments):
         lines.append(line)
 
     if not lines:
-        return "The document '%s' is open but has nothing in it." % document.Name
-    return "Document '%s' contains:\n%s" % (document.Name, "\n".join(lines))
+        return "The document '%s' is open but has nothing in it." % doc.Name
+    return "Document '%s' contains:\n%s" % (doc.Name, "\n".join(lines))
 
 
 def _describe_subelement(shape):
     """A face, edge or vertex, in the terms the model will need to act on it."""
     kind = shape.ShapeType
     if kind == "Vertex":
-        return "vertex at %s" % _vector(shape.Point)
+        return "vertex at %s" % vector(shape.Point)
 
     if kind == "Edge":
         curve = type(shape.Curve).__name__
         text = "%s edge, length %s mm, from %s to %s" % (
-            curve.lower(), _round(shape.Length),
-            _vector(shape.Vertexes[0].Point), _vector(shape.Vertexes[-1].Point))
+            curve.lower(), rounded(shape.Length),
+            vector(shape.Vertexes[0].Point), vector(shape.Vertexes[-1].Point))
         if curve == "Circle":
             text += ", radius %s mm, centre %s" % (
-                _round(shape.Curve.Radius), _vector(shape.Curve.Center))
+                rounded(shape.Curve.Radius), vector(shape.Curve.Center))
         return text
 
     if kind == "Face":
         surface = type(shape.Surface).__name__
-        text = "%s face, area %s mm2" % (surface.lower(), _round(shape.Area))
+        text = "%s face, area %s mm2" % (surface.lower(), rounded(shape.Area))
         if surface == "Plane":
-            text += ", normal %s" % _vector(shape.Surface.Axis)
+            text += ", normal %s" % vector(shape.Surface.Axis)
         box = shape.BoundBox
         text += ", spans %s x %s x %s mm" % (
-            _round(box.XLength), _round(box.YLength), _round(box.ZLength))
+            rounded(box.XLength), rounded(box.YLength), rounded(box.ZLength))
         return text
 
-    return "%s" % kind.lower()
+    return kind.lower()
 
 
 def describe_selection(_arguments):
@@ -107,7 +77,7 @@ def describe_object(arguments):
     if not name:
         return "Say which object to describe."
 
-    obj = _find(name)
+    obj = find(name)
     if obj is None:
         return "There is no object called '%s'." % name
 
@@ -116,22 +86,22 @@ def describe_object(arguments):
     placement = getattr(obj, "Placement", None)
     if placement is not None:
         lines.append("position %s, rotation %s degrees about %s" % (
-            _vector(placement.Base), _round(placement.Rotation.Angle * 57.2957795),
-            _vector(placement.Rotation.Axis)))
+            vector(placement.Base), rounded(placement.Rotation.Angle * 57.2957795),
+            vector(placement.Rotation.Axis)))
 
     shape = getattr(obj, "Shape", None)
     if shape is not None and not shape.isNull():
         box = shape.BoundBox
         lines.append("bounding box %s x %s x %s mm" % (
-            _round(box.XLength), _round(box.YLength), _round(box.ZLength)))
+            rounded(box.XLength), rounded(box.YLength), rounded(box.ZLength)))
         lines.append("%d faces, %d edges" % (len(shape.Faces), len(shape.Edges)))
         if shape.Solids:
-            lines.append("volume %s mm3" % _round(shape.Volume))
+            lines.append("volume %s mm3" % rounded(shape.Volume))
 
     # Whatever the feature itself is driven by: a pad's length, a box's sides.
     for prop in obj.PropertiesList:
         if obj.getTypeIdOfProperty(prop) in ("App::PropertyLength", "App::PropertyDistance"):
-            lines.append("%s = %s mm" % (prop, _round(getattr(obj, prop).Value)))
+            lines.append("%s = %s mm" % (prop, rounded(getattr(obj, prop).Value)))
 
     return "\n".join(lines)
 
@@ -179,7 +149,7 @@ SPECS = [
                 "properties": {
                     "name": {
                         "type": "string",
-                        "description": "The object's label as shown in the tree, or its internal name.",
+                        "description": "The object's label in the tree, or its internal name.",
                     },
                 },
                 "required": ["name"],
@@ -187,13 +157,3 @@ SPECS = [
         },
     },
 ]
-
-
-def dispatch(name, arguments):
-    handler = HANDLERS.get(name)
-    if handler is None:
-        return "There is no tool called %s." % name
-    try:
-        return handler(arguments)
-    except Exception as exc:
-        return "%s failed: %s: %s" % (name, type(exc).__name__, exc)
