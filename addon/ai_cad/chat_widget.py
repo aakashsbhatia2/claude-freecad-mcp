@@ -40,12 +40,27 @@ class ChatWidget(QtWidgets.QWidget):
 
         self._responder = ModelResponder(self)
         self._responder.chunk.connect(self._append_chunk)
+        self._responder.thinking.connect(self._append_detail)
+        self._responder.note.connect(self._append_note)
         self._responder.finished.connect(lambda: self._set_busy(False))
         self._responder.failed.connect(self._on_failed)
         self._build()
 
     def _build(self):
         self.transcript = QtWidgets.QTextBrowser(self)
+
+        # Reasoning and tool calls, folded away until asked for.
+        self.details_button = QtWidgets.QToolButton(self)
+        self.details_button.setText("Thinking and tools")
+        self.details_button.setCheckable(True)
+        self.details_button.setArrowType(QtCore.Qt.RightArrow)
+        self.details_button.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.details_button.setAutoRaise(True)
+        self.details_button.toggled.connect(self._toggle_details)
+
+        self.details = QtWidgets.QTextBrowser(self)
+        self.details.setMaximumHeight(160)
+        self.details.hide()
 
         self.input = ChatInput(self)
         self.input.submitted.connect(self._on_submit)
@@ -64,6 +79,8 @@ class ChatWidget(QtWidgets.QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
         layout.addWidget(self.transcript, 1)
+        layout.addWidget(self.details_button, 0, QtCore.Qt.AlignLeft)
+        layout.addWidget(self.details, 0)
         layout.addWidget(self.input, 0)
         layout.addLayout(row, 0)
 
@@ -72,6 +89,7 @@ class ChatWidget(QtWidgets.QWidget):
         if not text or not self.input.isEnabled():
             return
         self.input.clear()
+        self._start_detail_turn(text)
         self._write_role("You")
         self._append_chunk(text)
         self._set_busy(True)
@@ -84,6 +102,30 @@ class ChatWidget(QtWidgets.QWidget):
         self.status.setText("Thinking..." if busy else "")
         if not busy:
             self.input.setFocus()
+
+    def _toggle_details(self, shown):
+        self.details.setVisible(shown)
+        self.details_button.setArrowType(
+            QtCore.Qt.DownArrow if shown else QtCore.Qt.RightArrow)
+
+    def _start_detail_turn(self, text):
+        if not self.details.document().isEmpty():
+            self._append_detail("\n\n")
+        self._append_detail("--- %s\n" % text)
+
+    def _append_note(self, text):
+        self._append_detail("\n" + text + "\n")
+
+    def _append_detail(self, text):
+        cursor = self.details.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.End)
+        cursor.insertText(text)
+        self.details.setTextCursor(cursor)
+        QtCore.QTimer.singleShot(0, self._snap_details_to_bottom)
+
+    def _snap_details_to_bottom(self):
+        bar = self.details.verticalScrollBar()
+        bar.setValue(bar.maximum())
 
     def _on_failed(self, message):
         self._write_role("Error")

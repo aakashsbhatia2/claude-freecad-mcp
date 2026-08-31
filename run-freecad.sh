@@ -4,6 +4,14 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# API keys live in .env, which is gitignored. Exported so the add-on can read
+# them from the environment rather than from a settings file on disk.
+if [ -f .env ]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
 export FREECAD_USER_HOME="$PWD/sandbox/home"
 
 # FREECAD_USER_HOME covers FreeCAD's own config, but Qt writes its settings to

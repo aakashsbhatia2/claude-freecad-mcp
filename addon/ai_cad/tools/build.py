@@ -6,6 +6,8 @@ pocket driven by that sketch. The result is a normal parametric feature the
 user can open and re-dimension.
 """
 
+import math
+
 import FreeCAD
 import FreeCADGui
 import Part
@@ -46,10 +48,22 @@ def _origin_plane(body, plane):
     return None
 
 
+def _sketch_names():
+    doc = document()
+    if doc is None:
+        return []
+    return [o.Label for o in doc.Objects if o.TypeId == "Sketcher::SketchObject"]
+
+
 def _sketch_named(name):
     sketch = find(name)
     if sketch is None:
-        return None, "There is no sketch called '%s'." % name
+        existing = _sketch_names()
+        if not existing:
+            return None, ("There is no sketch called '%s', and the document has "
+                          "no sketches at all. Use create_sketch first." % name)
+        return None, "There is no sketch called '%s'. The sketches are: %s." % (
+            name, ", ".join(existing))
     if sketch.TypeId != "Sketcher::SketchObject":
         return None, "'%s' is a %s, not a sketch." % (name, sketch.TypeId)
     return sketch, None
@@ -90,9 +104,11 @@ def create_sketch(arguments):
     sketch = body.newObject("Sketcher::SketchObject", "Sketch")
     sketch.AttachmentSupport = support
     sketch.MapMode = "FlatFace"
+    if arguments.get("name"):
+        sketch.Label = str(arguments["name"])
     doc.recompute()
-    return "Created %s on %s, in body %s. It is empty." % (
-        sketch.Name, where, body.Label)
+    return "Created an empty sketch on %s in body %s. Call it '%s' from now on." % (
+        where, body.Label, sketch.Label)
 
 
 def add_rectangle(arguments):
@@ -215,12 +231,295 @@ def pocket(arguments):
     return "Cut %s into the body, %s, as %s." % (sketch.Name, depth, feature.Name)
 
 
+def list_sketch_geometry(arguments):
+    """What is drawn in a sketch, so the model can pick a piece to remove."""
+    sketch, error = _sketch_named(arguments.get("sketch"))
+    if error:
+        return error
+    if sketch.GeometryCount == 0:
+        return "%s is empty." % sketch.Name
+
+    lines = []
+    for index, geometry in enumerate(sketch.Geometry):
+        kind = type(geometry).__name__
+        if kind == "LineSegment":
+            detail = "from (%s, %s) to (%s, %s)" % (
+                rounded(geometry.StartPoint.x), rounded(geometry.StartPoint.y),
+                rounded(geometry.EndPoint.x), rounded(geometry.EndPoint.y))
+        elif kind == "Circle":
+            detail = "centre (%s, %s), diameter %s mm" % (
+                rounded(geometry.Center.x), rounded(geometry.Center.y),
+                rounded(geometry.Radius * 2))
+        else:
+            detail = ""
+        construction = " (construction)" if sketch.getConstruction(index) else ""
+        lines.append("%d: %s%s %s" % (index, kind, construction, detail))
+
+    return "%s contains:\n%s\n%s" % (
+        sketch.Name, "\n".join(lines), _constraint_state(sketch))
+
+
+def delete_geometry(arguments):
+    """Remove drawn elements from a sketch. A rectangle is four lines."""
+    sketch, error = _sketch_named(arguments.get("sketch"))
+    if error:
+        return error
+
+    indices = arguments.get("indices")
+    if isinstance(indices, (int, float)):
+        indices = [indices]
+    if not indices:
+        return "Say which elements to delete, by their index from list_sketch_geometry."
+
+    indices = sorted({int(i) for i in indices}, reverse=True)
+    out_of_range = [i for i in indices if i < 0 or i >= sketch.GeometryCount]
+    if out_of_range:
+        return "%s only has elements 0 to %d; asked for %s." % (
+            sketch.Name, sketch.GeometryCount - 1, out_of_range)
+
+    # Deleting shifts the indices below, so go from the end backwards. Any
+    # constraints attached to the geometry go with it.
+    sketch.delGeometries(indices)
+    document().recompute()
+    return "Deleted %d element(s) from %s. %s" % (
+        len(indices), sketch.Name, _constraint_state(sketch))
+
+
+def delete_object(arguments):
+    """Remove a whole sketch, pad or pocket from the document."""
+    name = arguments.get("name")
+    obj = find(name)
+    if obj is None:
+        return "There is no object called '%s'." % name
+
+    doc = document()
+    label = obj.Label
+    doc.removeObject(obj.Name)
+    doc.recompute()
+    return "Deleted %s." % label
+
+
+def _pin_point(sketch, geo, pos, x, y):
+    """Fix one endpoint in place, in the sketch's own coordinates."""
+    sketch.addConstraint(Sketcher.Constraint("DistanceX", -1, 1, geo, pos, x))
+    sketch.addConstraint(Sketcher.Constraint("DistanceY", -1, 1, geo, pos, y))
+
+
+def add_line(arguments):
+    sketch, error = _sketch_named(arguments.get("sketch"))
+    if error:
+        return error
+
+    x1, y1 = float(arguments["x1"]), float(arguments["y1"])
+    x2, y2 = float(arguments["x2"]), float(arguments["y2"])
+    index = sketch.addGeometry(
+        Part.LineSegment(Vector(x1, y1, 0), Vector(x2, y2, 0)), False)
+    _pin_point(sketch, index, 1, x1, y1)
+    _pin_point(sketch, index, 2, x2, y2)
+
+    document().recompute()
+    return "Added a line from (%s, %s) to (%s, %s) in %s. %s" % (
+        rounded(x1), rounded(y1), rounded(x2), rounded(y2), sketch.Name,
+        _constraint_state(sketch))
+
+
+def add_arc(arguments):
+    """An arc of a circle, measured anticlockwise from the positive X axis."""
+    sketch, error = _sketch_named(arguments.get("sketch"))
+    if error:
+        return error
+
+    cx = float(arguments.get("center_x", 0.0))
+    cy = float(arguments.get("center_y", 0.0))
+    radius = float(arguments["radius"])
+    start = math.radians(float(arguments["start_angle"]))
+    end = math.radians(float(arguments["end_angle"]))
+
+    circle = Part.Circle(Vector(cx, cy, 0), Vector(0, 0, 1), radius)
+    index = sketch.addGeometry(Part.ArcOfCircle(circle, start, end), False)
+    sketch.addConstraint(Sketcher.Constraint("Radius", index, radius))
+    _pin_point(sketch, index, 3, cx, cy)
+
+    document().recompute()
+    return "Added an arc of radius %s mm centred on (%s, %s) in %s. %s" % (
+        rounded(radius), rounded(cx), rounded(cy), sketch.Name,
+        _constraint_state(sketch))
+
+
+def add_polygon(arguments):
+    """A regular polygon, sized by the circle its corners sit on."""
+    sketch, error = _sketch_named(arguments.get("sketch"))
+    if error:
+        return error
+
+    sides = int(arguments["sides"])
+    if sides < 3:
+        return "A polygon needs at least three sides."
+
+    radius = float(arguments["radius"])
+    cx = float(arguments.get("center_x", 0.0))
+    cy = float(arguments.get("center_y", 0.0))
+
+    points = []
+    for corner in range(sides):
+        angle = 2.0 * math.pi * corner / sides
+        points.append((cx + radius * math.cos(angle), cy + radius * math.sin(angle)))
+
+    first = sketch.GeometryCount
+    for corner in range(sides):
+        x1, y1 = points[corner]
+        x2, y2 = points[(corner + 1) % sides]
+        sketch.addGeometry(Part.LineSegment(Vector(x1, y1, 0), Vector(x2, y2, 0)), False)
+
+    lines = [first + i for i in range(sides)]
+    for corner in range(sides):
+        sketch.addConstraint(Sketcher.Constraint(
+            "Coincident", lines[corner], 2, lines[(corner + 1) % sides], 1))
+    # Every corner pinned: rigid, but unambiguous and fully constrained.
+    for corner in range(sides):
+        _pin_point(sketch, lines[corner], 1, points[corner][0], points[corner][1])
+
+    document().recompute()
+    return "Added a %d-sided polygon of radius %s mm to %s. %s" % (
+        sides, rounded(radius), sketch.Name, _constraint_state(sketch))
+
+
+def add_slot(arguments):
+    """A rounded slot: two parallel lines capped with semicircles."""
+    sketch, error = _sketch_named(arguments.get("sketch"))
+    if error:
+        return error
+
+    x1, y1 = float(arguments["x1"]), float(arguments["y1"])
+    x2, y2 = float(arguments["x2"]), float(arguments["y2"])
+    width = float(arguments["width"])
+    radius = width / 2.0
+
+    length = math.hypot(x2 - x1, y2 - y1)
+    if length == 0:
+        return "The two centres are in the same place -- a slot needs a length."
+
+    # Unit vector along the slot, and the perpendicular offset to its sides.
+    ux, uy = (x2 - x1) / length, (y2 - y1) / length
+    px, py = -uy * radius, ux * radius
+    angle = math.atan2(uy, ux)
+
+    first = sketch.GeometryCount
+    sketch.addGeometry(Part.LineSegment(
+        Vector(x1 + px, y1 + py, 0), Vector(x2 + px, y2 + py, 0)), False)
+    sketch.addGeometry(Part.LineSegment(
+        Vector(x2 - px, y2 - py, 0), Vector(x1 - px, y1 - py, 0)), False)
+    sketch.addGeometry(Part.ArcOfCircle(
+        Part.Circle(Vector(x2, y2, 0), Vector(0, 0, 1), radius),
+        angle + math.pi / 2, angle - math.pi / 2), False)
+    sketch.addGeometry(Part.ArcOfCircle(
+        Part.Circle(Vector(x1, y1, 0), Vector(0, 0, 1), radius),
+        angle - math.pi / 2, angle + math.pi / 2), False)
+
+    top, bottom, cap_end, cap_start = (first, first + 1, first + 2, first + 3)
+    sketch.addConstraint(Sketcher.Constraint("Coincident", top, 2, cap_end, 1))
+    sketch.addConstraint(Sketcher.Constraint("Coincident", cap_end, 2, bottom, 1))
+    sketch.addConstraint(Sketcher.Constraint("Coincident", bottom, 2, cap_start, 1))
+    sketch.addConstraint(Sketcher.Constraint("Coincident", cap_start, 2, top, 1))
+    sketch.addConstraint(Sketcher.Constraint("Tangent", top, cap_end))
+    sketch.addConstraint(Sketcher.Constraint("Tangent", cap_end, bottom))
+    sketch.addConstraint(Sketcher.Constraint("Tangent", bottom, cap_start))
+    sketch.addConstraint(Sketcher.Constraint("Tangent", cap_start, top))
+    sketch.addConstraint(Sketcher.Constraint("Radius", cap_end, radius))
+    _pin_point(sketch, cap_start, 3, x1, y1)
+    _pin_point(sketch, cap_end, 3, x2, y2)
+
+    document().recompute()
+    return "Added a %s mm wide slot from (%s, %s) to (%s, %s) in %s. %s" % (
+        rounded(width), rounded(x1), rounded(y1), rounded(x2), rounded(y2),
+        sketch.Name, _constraint_state(sketch))
+
+
+# Constraints between two pieces of geometry, taking no number.
+PAIRED = ("Parallel", "Perpendicular", "Equal", "Tangent")
+# Constraints on one piece of geometry, taking no number.
+SINGLE = ("Horizontal", "Vertical")
+
+
+def add_constraint(arguments):
+    """Add a relationship between drawn elements, by their index."""
+    sketch, error = _sketch_named(arguments.get("sketch"))
+    if error:
+        return error
+
+    kind = str(arguments["type"])
+    first = arguments.get("first")
+    second = arguments.get("second")
+    value = arguments.get("value")
+
+    try:
+        if kind in SINGLE:
+            constraint = Sketcher.Constraint(kind, int(first))
+        elif kind in PAIRED:
+            constraint = Sketcher.Constraint(kind, int(first), int(second))
+        elif kind == "Coincident":
+            constraint = Sketcher.Constraint(
+                kind, int(first), int(arguments.get("first_point", 1)),
+                int(second), int(arguments.get("second_point", 1)))
+        elif kind in ("Radius", "Diameter"):
+            constraint = Sketcher.Constraint(kind, int(first), float(value))
+        elif kind == "Angle":
+            constraint = Sketcher.Constraint(
+                kind, int(first), int(second), math.radians(float(value)))
+        elif kind in ("Distance", "DistanceX", "DistanceY"):
+            constraint = Sketcher.Constraint(
+                kind, int(first), int(arguments.get("first_point", 1)),
+                int(second), int(arguments.get("second_point", 1)), float(value))
+        else:
+            return "I do not know the constraint type '%s'." % kind
+        sketch.addConstraint(constraint)
+    except Exception as exc:
+        return "That constraint was rejected: %s: %s" % (type(exc).__name__, exc)
+
+    document().recompute()
+    return "Added a %s constraint to %s. %s" % (
+        kind, sketch.Name, _constraint_state(sketch))
+
+
+def mirror_geometry(arguments):
+    """Mirror drawn elements about one of the sketch axes."""
+    sketch, error = _sketch_named(arguments.get("sketch"))
+    if error:
+        return error
+
+    indices = arguments.get("indices")
+    if isinstance(indices, (int, float)):
+        indices = [indices]
+    if not indices:
+        return "Say which elements to mirror, by index from list_sketch_geometry."
+
+    axis = str(arguments.get("axis", "X")).upper()
+    # In a sketch, geometry -1 is the X axis and -2 is the Y axis.
+    reference = {"X": (-1, 0), "Y": (-2, 0), "ORIGIN": (-1, 1)}.get(axis)
+    if reference is None:
+        return "Mirror about X, Y or origin."
+
+    sketch.addSymmetric([int(i) for i in indices], reference[0], reference[1])
+    document().recompute()
+    return "Mirrored %d element(s) about %s in %s. %s" % (
+        len(indices), axis, sketch.Name, _constraint_state(sketch))
+
+
 HANDLERS = {
     "create_sketch": create_sketch,
     "add_rectangle": add_rectangle,
     "add_circle": add_circle,
     "pad": pad,
     "pocket": pocket,
+    "list_sketch_geometry": list_sketch_geometry,
+    "delete_geometry": delete_geometry,
+    "delete_object": delete_object,
+    "add_line": add_line,
+    "add_arc": add_arc,
+    "add_polygon": add_polygon,
+    "add_slot": add_slot,
+    "add_constraint": add_constraint,
+    "mirror_geometry": mirror_geometry,
 }
 
 SPECS = [
@@ -231,7 +530,8 @@ SPECS = [
             "description": (
                 "Start a new empty sketch, either on one of the three origin "
                 "planes or on the flat face the user has clicked. Creates a "
-                "body if the document has none. Returns the sketch's name."
+                "body if the document has none. Use the name it gives back for "
+                "every later call -- do not invent one."
             ),
             "parameters": {
                 "type": "object",
@@ -240,6 +540,10 @@ SPECS = [
                         "type": "string",
                         "enum": ["XY", "XZ", "YZ", "selection"],
                         "description": "Which plane to draw on. Use 'selection' for the clicked face.",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "What to call it in the tree. Optional.",
                     },
                 },
             },
@@ -316,6 +620,196 @@ SPECS = [
                     "through_all": {"type": "boolean", "description": "Cut all the way through. Default false."},
                 },
                 "required": ["sketch"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_sketch_geometry",
+            "description": (
+                "List what is drawn in a sketch, numbered, with positions and "
+                "sizes. Use this before deleting anything, and to check whether "
+                "the shape you want already exists."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sketch": {"type": "string", "description": "Name of the sketch."},
+                },
+                "required": ["sketch"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_geometry",
+            "description": (
+                "Delete drawn elements from a sketch by their index from "
+                "list_sketch_geometry. A rectangle is four separate lines, so "
+                "removing one means passing all four indices."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sketch": {"type": "string", "description": "Name of the sketch."},
+                    "indices": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Indices to delete, as reported by list_sketch_geometry.",
+                    },
+                },
+                "required": ["sketch", "indices"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_object",
+            "description": (
+                "Delete a whole object -- a sketch, a pad, a pocket -- from the "
+                "document. Deleting a sketch that a pad depends on will break "
+                "the pad, so check with list_objects first."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "The object's label or internal name."},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_line",
+            "description": "Draw a single line in a sketch between two points, in mm.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sketch": {"type": "string", "description": "Name of the sketch."},
+                    "x1": {"type": "number"}, "y1": {"type": "number"},
+                    "x2": {"type": "number"}, "y2": {"type": "number"},
+                },
+                "required": ["sketch", "x1", "y1", "x2", "y2"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_arc",
+            "description": (
+                "Draw an arc of a circle. Angles are degrees anticlockwise from "
+                "the positive X axis."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sketch": {"type": "string", "description": "Name of the sketch."},
+                    "radius": {"type": "number", "description": "Radius in mm."},
+                    "start_angle": {"type": "number", "description": "Start angle in degrees."},
+                    "end_angle": {"type": "number", "description": "End angle in degrees."},
+                    "center_x": {"type": "number", "description": "Centre X in mm. Default 0."},
+                    "center_y": {"type": "number", "description": "Centre Y in mm. Default 0."},
+                },
+                "required": ["sketch", "radius", "start_angle", "end_angle"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_polygon",
+            "description": (
+                "Draw a regular polygon -- a hexagon for a nut pocket, say. "
+                "The radius is to the corners, not the flats."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sketch": {"type": "string", "description": "Name of the sketch."},
+                    "sides": {"type": "integer", "description": "Number of sides, 3 or more."},
+                    "radius": {"type": "number", "description": "Corner radius in mm."},
+                    "center_x": {"type": "number", "description": "Centre X in mm. Default 0."},
+                    "center_y": {"type": "number", "description": "Centre Y in mm. Default 0."},
+                },
+                "required": ["sketch", "sides", "radius"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_slot",
+            "description": (
+                "Draw a rounded slot between two centres -- the shape you cut "
+                "for an adjustable screw. Width is the full width, end to end."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sketch": {"type": "string", "description": "Name of the sketch."},
+                    "x1": {"type": "number"}, "y1": {"type": "number"},
+                    "x2": {"type": "number"}, "y2": {"type": "number"},
+                    "width": {"type": "number", "description": "Slot width in mm."},
+                },
+                "required": ["sketch", "x1", "y1", "x2", "y2", "width"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_constraint",
+            "description": (
+                "Add a relationship between drawn elements: horizontal, vertical, "
+                "parallel, perpendicular, equal, tangent, coincident, or a "
+                "dimension. Indices come from list_sketch_geometry. Point numbers "
+                "are 1 for the start, 2 for the end, 3 for a centre."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sketch": {"type": "string", "description": "Name of the sketch."},
+                    "type": {
+                        "type": "string",
+                        "enum": ["Horizontal", "Vertical", "Parallel", "Perpendicular",
+                                 "Equal", "Tangent", "Coincident", "Distance",
+                                 "DistanceX", "DistanceY", "Radius", "Diameter", "Angle"],
+                        "description": "Which constraint to apply.",
+                    },
+                    "first": {"type": "integer", "description": "First element's index."},
+                    "second": {"type": "integer", "description": "Second element's index, where two are needed."},
+                    "first_point": {"type": "integer", "description": "1 start, 2 end, 3 centre. Default 1."},
+                    "second_point": {"type": "integer", "description": "1 start, 2 end, 3 centre. Default 1."},
+                    "value": {"type": "number", "description": "The number, for dimensional constraints."},
+                },
+                "required": ["sketch", "type", "first"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "mirror_geometry",
+            "description": "Mirror drawn elements about the sketch's X axis, Y axis or origin.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sketch": {"type": "string", "description": "Name of the sketch."},
+                    "indices": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Indices to mirror, from list_sketch_geometry.",
+                    },
+                    "axis": {"type": "string", "enum": ["X", "Y", "origin"],
+                             "description": "What to mirror about. Default X."},
+                },
+                "required": ["sketch", "indices"],
             },
         },
     },
