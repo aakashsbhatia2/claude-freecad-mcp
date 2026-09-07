@@ -11,7 +11,7 @@
 Open Edit, then Preferences, then Addon Manager. Under Custom repositories,
 add one:
 
-- Repository URL: `https://github.com/aakashsbhatia2/conversational-free-cad-plugin`
+- Repository URL: `https://github.com/aakashsbhatia2/claude-freecad-mcp`
 - Branch: `main`
 
 Then open Tools, then Addon Manager. claude-freecad-mcp is now in the list.
@@ -22,7 +22,7 @@ Install it and restart FreeCAD. Uninstalling later is in the same place.
 Type these into Claude Code:
 
 ```
-/plugin marketplace add aakashsbhatia2/conversational-free-cad-plugin
+/plugin marketplace add aakashsbhatia2/claude-freecad-mcp
 /plugin install claude-freecad-mcp
 ```
 

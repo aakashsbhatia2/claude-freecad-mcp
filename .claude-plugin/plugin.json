@@ -5,7 +5,7 @@
   "author": {
     "name": "Aakash Bhatia"
   },
-  "homepage": "https://github.com/aakashsbhatia2/conversational-free-cad-plugin",
+  "homepage": "https://github.com/aakashsbhatia2/claude-freecad-mcp",
   "license": "LGPL-2.1-or-later",
   "mcpServers": {
     "freecad": {

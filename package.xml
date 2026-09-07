@@ -7,9 +7,9 @@
   <maintainer email="aakashsbhatia@gmail.com">Aakash Bhatia</maintainer>
   <author email="aakashsbhatia@gmail.com">Aakash Bhatia</author>
   <license file="LICENSE">LGPL-2.1-or-later</license>
-  <url type="repository" branch="main">https://github.com/aakashsbhatia2/conversational-free-cad-plugin</url>
-  <url type="bugtracker">https://github.com/aakashsbhatia2/conversational-free-cad-plugin/issues</url>
-  <url type="readme">https://github.com/aakashsbhatia2/conversational-free-cad-plugin/blob/main/README.md</url>
+  <url type="repository" branch="main">https://github.com/aakashsbhatia2/claude-freecad-mcp</url>
+  <url type="bugtracker">https://github.com/aakashsbhatia2/claude-freecad-mcp/issues</url>
+  <url type="readme">https://github.com/aakashsbhatia2/claude-freecad-mcp/blob/main/README.md</url>
   <icon>Resources/icon.svg</icon>
   <freecadmin>1.0</freecadmin>
   <pythonmin>3.9</pythonmin>
