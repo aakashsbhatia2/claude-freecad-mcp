@@ -1,0 +1,13 @@
+{
+  "name": "claude-freecad-mcp",
+  "owner": {
+    "name": "Aakash Bhatia"
+  },
+  "plugins": [
+    {
+      "name": "claude-freecad-mcp",
+      "source": "./",
+      "description": "Drive a running FreeCAD in plain English. Reads what you have clicked in the 3D view."
+    }
+  ]
+}

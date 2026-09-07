@@ -13,10 +13,17 @@ VIEWS = {
 }
 
 
+def new_document(arguments):
+    name = (arguments.get("name") or "Unnamed").strip()
+    doc = FreeCAD.newDocument(name)
+    FreeCAD.setActiveDocument(doc.Name)
+    return "Created document '%s'. It is the active one now." % doc.Label
+
+
 def undo(_arguments):
     doc = document()
     if doc is None:
-        return "No document is open."
+        return "No document is open. Use new_document to start one."
     if not doc.UndoNames:
         return "There is nothing to undo."
     name = doc.UndoNames[0]
@@ -28,7 +35,7 @@ def undo(_arguments):
 def save_document(arguments):
     doc = document()
     if doc is None:
-        return "No document is open."
+        return "No document is open. Use new_document to start one."
 
     path = arguments.get("path")
     if path:
@@ -87,7 +94,7 @@ def _exportable(name):
 
     doc = document()
     if doc is None:
-        return None, "No document is open."
+        return None, "No document is open. Use new_document to start one."
     bodies = [o for o in doc.Objects if o.TypeId == "PartDesign::Body"]
     if len(bodies) == 1:
         return bodies[0], None
@@ -132,6 +139,7 @@ def export_step(arguments):
 
 
 HANDLERS = {
+    "new_document": new_document,
     "undo": undo,
     "save_document": save_document,
     "fit_view": fit_view,
@@ -140,46 +148,3 @@ HANDLERS = {
     "export_stl": export_stl,
     "export_step": export_step,
 }
-
-
-def _spec(name, description, properties=None, required=None):
-    return {
-        "type": "function",
-        "function": {
-            "name": name,
-            "description": description,
-            "parameters": {
-                "type": "object",
-                "properties": properties or {},
-                "required": required or [],
-            },
-        },
-    }
-
-
-SPECS = [
-    _spec("undo", "Undo the last change. Use this when you have just done "
-                  "something the user did not want."),
-    _spec("save_document",
-          "Save the document. A path is only needed the first time.",
-          {"path": {"type": "string", "description": "Where to save, if it has no file yet."}}),
-    _spec("fit_view", "Zoom the 3D view so everything is visible."),
-    _spec("set_view",
-          "Point the camera at the model from a named direction.",
-          {"direction": {"type": "string",
-                         "enum": ["isometric", "top", "bottom", "front", "rear", "left", "right"],
-                         "description": "Which way to look from."}}),
-    _spec("measure",
-          "Measure the shortest distance between the two things the user has "
-          "clicked."),
-    _spec("export_stl",
-          "Write an STL file for slicing and printing.",
-          {"path": {"type": "string", "description": "Where to write the file."},
-           "name": {"type": "string", "description": "Which body to export. Defaults to the only one."}},
-          ["path"]),
-    _spec("export_step",
-          "Write a STEP file, which keeps exact curved surfaces for other CAD.",
-          {"path": {"type": "string", "description": "Where to write the file."},
-           "name": {"type": "string", "description": "Which body to export. Defaults to the only one."}},
-          ["path"]),
-]

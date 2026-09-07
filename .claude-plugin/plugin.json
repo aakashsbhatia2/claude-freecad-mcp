@@ -1,0 +1,16 @@
+{
+  "name": "claude-freecad-mcp",
+  "description": "Drive a running FreeCAD in plain English. Reads what you have clicked in the 3D view.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Aakash Bhatia"
+  },
+  "homepage": "https://github.com/aakashsbhatia2/conversational-free-cad-plugin",
+  "license": "LGPL-2.1-or-later",
+  "mcpServers": {
+    "freecad": {
+      "command": "python3",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp_server.py"]
+    }
+  }
+}

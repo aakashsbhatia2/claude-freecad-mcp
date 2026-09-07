@@ -11,7 +11,7 @@ NOISE = ("App::Origin", "App::Plane", "App::Line", "App::LocalCoordinateSystem")
 def list_objects(_arguments):
     doc = document()
     if doc is None:
-        return "No document is open."
+        return "No document is open. Use new_document to start one."
 
     lines = []
     for obj in doc.Objects:
@@ -111,49 +111,3 @@ HANDLERS = {
     "describe_selection": describe_selection,
     "describe_object": describe_object,
 }
-
-SPECS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "list_objects",
-            "description": (
-                "List everything in the open FreeCAD document: bodies, sketches "
-                "and features, with their types. Use this first to see what exists."
-            ),
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "describe_selection",
-            "description": (
-                "Describe what the user has currently clicked in the 3D view or "
-                "the tree -- which faces, edges or objects, and their size and "
-                "position. Use this whenever the user says 'this' or 'that'."
-            ),
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "describe_object",
-            "description": (
-                "Report one object's dimensions, position and driving values, "
-                "such as a pad's length or a box's sides."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "The object's label in the tree, or its internal name.",
-                    },
-                },
-                "required": ["name"],
-            },
-        },
-    },
-]
