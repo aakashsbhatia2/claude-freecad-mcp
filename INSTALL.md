@@ -26,17 +26,6 @@ Type these into Claude Code:
 /plugin install claude-freecad-mcp
 ```
 
-If Claude Code asks permission before every tool, put this in
-`~/.claude/settings.json`:
-
-```json
-{
-  "permissions": {
-    "allow": ["mcp__plugin_claude-freecad-mcp_freecad__.*"]
-  }
-}
-```
-
 ## 3. Use it
 
 Open FreeCAD. Then run `claude` in your models folder. `/mcp` confirms it
@@ -44,8 +33,10 @@ found FreeCAD.
 
 Keep both windows open.
 
-To work on something you can see, click the face or edge in FreeCAD first,
-then ask.
+Ask for what you want and it builds it.
+
+Some things need you to say which face or edge you mean — a fillet, a hole,
+a sketch on a face. Click it in FreeCAD, then ask.
 
 ## The status line
 
@@ -57,22 +48,3 @@ Claude Code | connected | last: pad | selected: Pad Face3
 
 Whether Claude Code is attached, the last tool that ran, and what it can see
 you have clicked. Reads `no client` when nothing is connected.
-
-## When it doesn't work
-
-Check FreeCAD and Claude Code are both running and the status line says
-`connected`.
-
-If the status line is missing entirely, the add-on did not load. Look in
-View, Panels, Report view for the reason.
-
-## Limits
-
-No screenshots. The result can only be read back through the tools.
-
-No headless mode. FreeCAD must be running with its window open.
-
-No Windows.
-
-One call at a time. A call arriving while a FreeCAD dialog is open waits until
-the dialog closes, and returns an error after two minutes.
