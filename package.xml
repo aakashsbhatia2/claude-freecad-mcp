@@ -17,6 +17,10 @@
   <tag>AI</tag>
   <tag>PartDesign</tag>
   <content>
-    <other/>
+    <workbench>
+      <name>claude-freecad-mcp</name>
+      <subdirectory>./</subdirectory>
+      <icon>Resources/icon.svg</icon>
+    </workbench>
   </content>
 </package>
