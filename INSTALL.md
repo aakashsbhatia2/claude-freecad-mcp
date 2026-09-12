@@ -23,8 +23,21 @@ Type these into Claude Code:
 
 ```
 /plugin marketplace add aakashsbhatia2/claude-freecad-mcp
-/plugin install claude-freecad-mcp
+/plugin install claude-freecad-mcp --scope local
 ```
+
+`--scope local` installs it in the folder you are in and nowhere else. Run
+it from your models folder. Leave the scope off and it turns on in every
+project you open, which you probably do not want.
+
+To remove it later, in a terminal in that same folder:
+
+```
+claude plugin uninstall claude-freecad-mcp@claude-freecad-mcp --scope local
+```
+
+The scope has to match the one you installed with, or it looks in the wrong
+place and reports nothing to remove.
 
 ## 3. Use it
 
