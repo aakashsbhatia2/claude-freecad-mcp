@@ -325,10 +325,13 @@ SPECS = [
     _spec("measure",
           "Measure the shortest distance between the two things the user "
           "has clicked."),
-    _spec("export_stl",
-          "Write an STL file for slicing and printing.",
+    _spec("export_mesh",
+          "Write a triangle mesh for slicing and printing. Unless the user "
+          "already named a format, leave format out and they are asked which "
+          "one -- it depends on their slicer, which you cannot see.",
           {
               "path": {"type": "string", "description": "Where to write the file."},
+              "format": {"type": "string", "enum": ["stl", "3mf", "obj"], "description": "Only if the user named one. Leave it out otherwise and they are asked -- do not choose for them."},
               "name": {"type": "string", "description": "Which body to export. Defaults to the only one."},
           },
           ["path"]),

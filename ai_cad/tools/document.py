@@ -104,8 +104,24 @@ def _exportable(name):
         b.Label for b in bodies)
 
 
-def export_stl(arguments):
-    """STL for slicing. Deviation controls how finely curves are triangulated."""
+# Triangle formats FreeCAD writes from one call, picked by extension.
+# 3MF is a container that records the unit; an STL is bare triangles with
+# no units at all, which is why a slicer has to be told the scale.
+MESH_FORMATS = ("stl", "3mf", "obj")
+
+
+def _written(path):
+    """File size in the unit that does not read as a failure.
+
+    A small bracket is under a kilobyte, and "(0 KB)" looks like nothing
+    came out.
+    """
+    size = os.path.getsize(path) if os.path.exists(path) else 0
+    return "%d KB" % (size // 1024) if size >= 1024 else "%d bytes" % size
+
+
+def export_mesh(arguments):
+    """Triangles for a slicer, in whichever of the mesh formats was asked for."""
     import Mesh
 
     obj, error = _exportable(arguments.get("name"))
@@ -113,12 +129,19 @@ def export_stl(arguments):
         return error
 
     path = os.path.expanduser(str(arguments["path"]))
-    if not path.lower().endswith(".stl"):
-        path += ".stl"
+    fmt = str(arguments.get("format") or "").lower().lstrip(".")
+    if not fmt:
+        # Nothing said: believe the extension already on the path, else STL.
+        suffix = os.path.splitext(path)[1].lower().lstrip(".")
+        fmt = suffix if suffix in MESH_FORMATS else "stl"
+    if fmt not in MESH_FORMATS:
+        return "Format must be one of: %s." % ", ".join(MESH_FORMATS)
+
+    if not path.lower().endswith("." + fmt):
+        path += "." + fmt
 
     Mesh.export([obj], path)
-    size = os.path.getsize(path) if os.path.exists(path) else 0
-    return "Exported %s to %s (%d KB)." % (obj.Label, path, size // 1024)
+    return "Exported %s to %s (%s)." % (obj.Label, path, _written(path))
 
 
 def export_step(arguments):
@@ -134,8 +157,7 @@ def export_step(arguments):
         path += ".step"
 
     Part.export([obj], path)
-    size = os.path.getsize(path) if os.path.exists(path) else 0
-    return "Exported %s to %s (%d KB)." % (obj.Label, path, size // 1024)
+    return "Exported %s to %s (%s)." % (obj.Label, path, _written(path))
 
 
 HANDLERS = {
@@ -145,6 +167,6 @@ HANDLERS = {
     "fit_view": fit_view,
     "set_view": set_view,
     "measure": measure,
-    "export_stl": export_stl,
+    "export_mesh": export_mesh,
     "export_step": export_step,
 }

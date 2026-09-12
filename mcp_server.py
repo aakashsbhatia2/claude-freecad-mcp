@@ -55,6 +55,84 @@ TOOLS = [{"name": spec["function"]["name"],
 # tell in its status bar whether anything is attached.
 LINK = None
 
+# What the client said it could do, read at initialize. Asking a client that
+# never offered to ask would hang this process waiting for an answer.
+CLIENT_CAPABILITIES = {}
+
+# Messages that turned up while we were waiting on an answer to our own
+# question. They are handled once the answer lands, in the order they came.
+DEFERRED = []
+
+# Tools the user should be asked about rather than have a value guessed for.
+# The choice of output format is the user's, not the model's -- it depends on
+# which slicer they are feeding, which the model cannot see.
+ASK_FIRST = {
+    "export_mesh": {
+        "field": "format",
+        "message": "Which format should the mesh be written in?",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string",
+                    "enum": ["stl", "3mf", "obj"],
+                    "title": "Format",
+                    "description": "3mf records that the numbers are millimetres; stl does not.",
+                },
+            },
+            "required": ["format"],
+        },
+    },
+}
+
+OUT = sys.stdout
+NEXT_REQUEST_ID = [1000]      # ours, kept clear of the ids the client uses
+
+
+def send(message):
+    OUT.write(json.dumps(message) + "\n")
+    OUT.flush()
+
+
+def read_message():
+    """One parsed message from the client, or None at end of input."""
+    line = sys.stdin.readline()
+    if not line:
+        return None
+    line = line.strip()
+    if not line:
+        return read_message()
+    try:
+        return json.loads(line)
+    except ValueError:
+        return read_message()      # nothing to reply to without an id
+
+
+def ask_user(message, schema):
+    """Put a question to the user through the client. Returns their answer.
+
+    Anything else that arrives while we wait is set aside rather than
+    dropped: a request thrown away here would leave the client hanging.
+    """
+    if "elicitation" not in CLIENT_CAPABILITIES:
+        return None
+
+    NEXT_REQUEST_ID[0] += 1
+    request_id = NEXT_REQUEST_ID[0]
+    send({"jsonrpc": "2.0", "id": request_id, "method": "elicitation/create",
+          "params": {"message": message, "requestedSchema": schema}})
+
+    while True:
+        reply = read_message()
+        if reply is None:
+            return None
+        if reply.get("id") == request_id:
+            result = reply.get("result") or {}
+            if result.get("action") != "accept":
+                return None        # declined, cancelled, or no one to ask
+            return result.get("content") or {}
+        DEFERRED.append(reply)
+
 
 def _open():
     conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -103,14 +181,27 @@ def ask_freecad(request):
 
 
 def call_tool(name, arguments):
-    ok, text = ask_freecad({"op": "call", "name": name,
-                            "arguments": arguments or {}})
+    arguments = dict(arguments or {})
+
+    question = ASK_FIRST.get(name)
+    if question and not arguments.get(question["field"]):
+        answer = ask_user(question["message"], question["schema"])
+        if answer is None:
+            return {"content": [{"type": "text", "text":
+                    "The user was not asked, so nothing was written. Ask them "
+                    "which %s they want and call this again with it."
+                    % question["field"]}],
+                    "isError": True}
+        arguments[question["field"]] = answer.get(question["field"])
+
+    ok, text = ask_freecad({"op": "call", "name": name, "arguments": arguments})
     return {"content": [{"type": "text", "text": text}], "isError": not ok}
 
 
 def handle(method, params):
     """Return a result, or raise KeyError for a method we don't have."""
     if method == "initialize":
+        CLIENT_CAPABILITIES.update(params.get("capabilities") or {})
         return {
             # Echo the client's version back rather than pinning one: nothing
             # here behaves differently between revisions.
@@ -129,15 +220,10 @@ def handle(method, params):
 
 
 def main():
-    out = sys.stdout
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            message = json.loads(line)
-        except ValueError:
-            continue        # nothing to reply to without an id
+    while True:
+        message = DEFERRED.pop(0) if DEFERRED else read_message()
+        if message is None:
+            return
 
         # Notifications carry no id and must never be answered -- a reply to
         # notifications/initialized is not valid JSON-RPC.
@@ -154,8 +240,7 @@ def main():
         except Exception as exc:
             reply["error"] = {"code": -32603,
                               "message": "%s: %s" % (type(exc).__name__, exc)}
-        out.write(json.dumps(reply) + "\n")
-        out.flush()
+        send(reply)
 
 
 if __name__ == "__main__":

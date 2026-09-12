@@ -61,7 +61,7 @@ The complete set. Anything not listed here, it cannot do.
 | `save_document` | Saves, with a path the first time |
 | `fit_view` | Zooms to fit |
 | `set_view` | Points the camera from a named direction |
-| `export_stl` | Writes an STL for slicing |
+| `export_mesh` | Writes an STL, 3MF or OBJ for slicing |
 | `export_step` | Writes a STEP for other CAD |
 
 Every call is one undo step, so Ctrl+Z in FreeCAD takes back one thing at a
