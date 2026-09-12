@@ -2,8 +2,8 @@
 <package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
   <name>claude-freecad-mcp</name>
   <description>Lets Claude Code drive a running FreeCAD. The tools call FreeCAD's own operations, so what they produce is a parametric feature that can be opened and re-dimensioned by hand. Reads the current selection, so a face or edge clicked in FreeCAD can be referred to in the request.</description>
-  <version>0.1.0</version>
-  <date>2026-09-07</date>
+  <version>0.2.0</version>
+  <date>2026-09-12</date>
   <maintainer email="aakashsbhatia@gmail.com">Aakash Bhatia</maintainer>
   <author email="aakashsbhatia@gmail.com">Aakash Bhatia</author>
   <license file="LICENSE">LGPL-2.1-or-later</license>
