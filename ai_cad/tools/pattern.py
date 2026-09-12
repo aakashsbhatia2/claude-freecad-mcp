@@ -56,7 +56,7 @@ def linear_pattern(arguments):
         return "Could not find the %s axis." % axis
 
     feature = body.newObject("PartDesign::LinearPattern", "LinearPattern")
-    feature.Transformations = [obj]
+    feature.Originals = [obj]
     feature.Direction = (reference, [""])
     feature.Length = float(arguments["length"])
     feature.Occurrences = int(arguments["count"])
@@ -83,7 +83,7 @@ def polar_pattern(arguments):
         return "Could not find the %s axis." % axis
 
     feature = body.newObject("PartDesign::PolarPattern", "PolarPattern")
-    feature.Transformations = [obj]
+    feature.Originals = [obj]
     feature.Axis = (reference, [""])
     feature.Angle = float(arguments.get("angle", 360.0))
     feature.Occurrences = int(arguments["count"])
@@ -109,7 +109,7 @@ def mirror_feature(arguments):
         return "Could not find the %s plane." % plane
 
     feature = body.newObject("PartDesign::Mirrored", "Mirrored")
-    feature.Transformations = [obj]
+    feature.Originals = [obj]
     feature.MirrorPlane = (reference, [""])
 
     problem = _finish(feature, document(), "mirror")
