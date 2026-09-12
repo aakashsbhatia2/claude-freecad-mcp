@@ -159,8 +159,11 @@ def add_rectangle(arguments):
 def _constraint_state(sketch):
     """Whether the sketch is pinned down, in the words the user would use."""
     if getattr(sketch, "FullyConstrained", False):
-        return "The sketch is fully constrained."
-    return "The sketch is not fully constrained yet."
+        return "Fully constrained."
+    freedom = getattr(sketch, "DoF", None)
+    if freedom is None:
+        return "Not fully constrained yet."
+    return "Not fully constrained: %d degree(s) of freedom left." % freedom
 
 
 def add_circle(arguments):
@@ -184,6 +187,19 @@ def add_circle(arguments):
         _constraint_state(sketch))
 
 
+def _set_symmetric(feature, symmetric):
+    """Grow the pad both ways from the sketch, or only one.
+
+    FreeCAD 1.1 replaced Midplane with SideType and warns that Midplane is
+    going away; FreeCAD 1.0 has only Midplane. Set whichever this one knows,
+    so the add-on keeps working on both.
+    """
+    if hasattr(feature, "SideType"):
+        feature.SideType = "Symmetric" if symmetric else "One side"
+    else:
+        feature.Midplane = symmetric
+
+
 def pad(arguments):
     sketch, error = _sketch_named(arguments.get("sketch"))
     if error:
@@ -196,7 +212,7 @@ def pad(arguments):
     feature = body.newObject("PartDesign::Pad", "Pad")
     feature.Profile = sketch
     feature.Length = float(arguments["length"])
-    feature.Midplane = bool(arguments.get("symmetric", False))
+    _set_symmetric(feature, bool(arguments.get("symmetric", False)))
     feature.Reversed = bool(arguments.get("reversed", False))
 
     problem = _report(feature, doc)
@@ -231,32 +247,126 @@ def pocket(arguments):
     return "Cut %s into the body, %s, as %s." % (sketch.Name, depth, feature.Name)
 
 
-def list_sketch_geometry(arguments):
-    """What is drawn in a sketch, so the model can pick a piece to remove."""
+# Where a constraint's endpoint sits on the geometry it names.
+POINT_NAMES = {1: "start", 2: "end", 3: "centre"}
+
+# Constraints carrying a number, and the unit that number is in. Radius and
+# Diameter read backwards in that shape, so they are worded separately below.
+MEASURED = {"Distance": "mm", "DistanceX": "mm in X", "DistanceY": "mm in Y",
+            "Angle": "degrees"}
+SIZED = {"Radius": "radius", "Diameter": "diameter"}
+
+
+def _where(geo, pos):
+    """Name one end of one element, the way a person would point at it."""
+    if geo == -1:
+        return "the origin" if pos == 1 else "the X axis"
+    if geo == -2:
+        return "the Y axis"
+    point = POINT_NAMES.get(pos)
+    return "%s of %d" % (point, geo) if point else "%d" % geo
+
+
+def _constraint_text(constraint):
+    """One constraint in a sentence, not a row of field names."""
+    kind = constraint.Type
+    first = _where(constraint.First, constraint.FirstPos)
+    has_second = constraint.Second not in (None, -2000)
+    second = _where(constraint.Second, constraint.SecondPos) if has_second else None
+
+    if kind in SIZED:
+        text = "%s has %s %s mm" % (first, SIZED[kind], rounded(constraint.Value))
+    elif kind in MEASURED:
+        value = math.degrees(constraint.Value) if kind == "Angle" else constraint.Value
+        text = "%s %s" % (rounded(value), MEASURED[kind])
+        text += " from %s to %s" % (first, second) if second else " on %s" % first
+    elif kind == "Coincident":
+        text = "%s meets %s" % (first, second)
+    elif kind in ("Horizontal", "Vertical"):
+        text = "%s is %s" % (first, kind.lower())
+    elif second:
+        text = "%s is %s to %s" % (first, kind.lower(), second)
+    else:
+        text = "%s is %s" % (first, kind.lower())
+
+    if not constraint.Driving:
+        text += " (reference only, drives nothing)"
+    return text
+
+
+def _geometry_text(geometry):
+    """One drawn element, with the numbers needed to recognise it."""
+    kind = type(geometry).__name__
+    if kind == "LineSegment":
+        return "line from (%s, %s) to (%s, %s)" % (
+            rounded(geometry.StartPoint.x), rounded(geometry.StartPoint.y),
+            rounded(geometry.EndPoint.x), rounded(geometry.EndPoint.y))
+    if kind == "Circle":
+        return "circle, diameter %s mm, centred on (%s, %s)" % (
+            rounded(geometry.Radius * 2),
+            rounded(geometry.Center.x), rounded(geometry.Center.y))
+    if kind == "ArcOfCircle":
+        return "arc, radius %s mm, centred on (%s, %s), %s to %s degrees" % (
+            rounded(geometry.Radius),
+            rounded(geometry.Center.x), rounded(geometry.Center.y),
+            rounded(math.degrees(geometry.FirstParameter)),
+            rounded(math.degrees(geometry.LastParameter)))
+    if kind == "Point":
+        return "point at (%s, %s)" % (
+            rounded(geometry.X), rounded(geometry.Y))
+    return kind.lower()
+
+
+def _attached_to(sketch):
+    """The plane or face the sketch is drawn on."""
+    support = getattr(sketch, "AttachmentSupport", None)
+    if not support:
+        return "nothing"
+    obj, subs = support[0]
+    sub = subs[0] if subs and subs[0] else ""
+    name = obj.Label.replace("_", " ") if not sub else "%s of %s" % (sub, obj.Label)
+    return name
+
+
+def describe_sketch(arguments):
+    """Everything about one sketch in a single answer.
+
+    Geometry and the constraints holding it are the same question -- asked
+    apart, the model acts on half a picture. Each constraint is printed under
+    every element it touches, so 'which one drives the width' is readable
+    rather than guessed at, and its index is the one set_dimension wants.
+    """
     sketch, error = _sketch_named(arguments.get("sketch"))
     if error:
         return error
     if sketch.GeometryCount == 0:
-        return "%s is empty." % sketch.Name
+        return "%s is empty, on %s." % (sketch.Label, _attached_to(sketch))
+
+    # Constraint indices gathered per element, so each is shown where it bites.
+    attached = {}
+    loose = []
+    for index, constraint in enumerate(sketch.Constraints):
+        touched = {g for g in (constraint.First, constraint.Second, constraint.Third)
+                   if g is not None and g >= 0}
+        if not touched:
+            loose.append("  [%d] %s" % (index, _constraint_text(constraint)))
+        for geo in touched:
+            attached.setdefault(geo, []).append(
+                "     [%d] %s" % (index, _constraint_text(constraint)))
 
     lines = []
     for index, geometry in enumerate(sketch.Geometry):
-        kind = type(geometry).__name__
-        if kind == "LineSegment":
-            detail = "from (%s, %s) to (%s, %s)" % (
-                rounded(geometry.StartPoint.x), rounded(geometry.StartPoint.y),
-                rounded(geometry.EndPoint.x), rounded(geometry.EndPoint.y))
-        elif kind == "Circle":
-            detail = "centre (%s, %s), diameter %s mm" % (
-                rounded(geometry.Center.x), rounded(geometry.Center.y),
-                rounded(geometry.Radius * 2))
-        else:
-            detail = ""
         construction = " (construction)" if sketch.getConstruction(index) else ""
-        lines.append("%d: %s%s %s" % (index, kind, construction, detail))
+        lines.append("%d: %s%s" % (index, _geometry_text(geometry), construction))
+        lines.extend(attached.get(index, ["     nothing holds it in place"]))
 
-    return "%s contains:\n%s\n%s" % (
-        sketch.Name, "\n".join(lines), _constraint_state(sketch))
+    if loose:
+        lines.append("Not tied to any element:")
+        lines.extend(loose)
+
+    return "%s, drawn on %s. %s\n\n%s" % (
+        sketch.Label, _attached_to(sketch), _constraint_state(sketch),
+        "\n".join(lines))
 
 
 def delete_geometry(arguments):
@@ -269,7 +379,7 @@ def delete_geometry(arguments):
     if isinstance(indices, (int, float)):
         indices = [indices]
     if not indices:
-        return "Say which elements to delete, by their index from list_sketch_geometry."
+        return "Say which elements to delete, by their index from describe_sketch."
 
     indices = sorted({int(i) for i in indices}, reverse=True)
     out_of_range = [i for i in indices if i < 0 or i >= sketch.GeometryCount]
@@ -491,7 +601,7 @@ def mirror_geometry(arguments):
     if isinstance(indices, (int, float)):
         indices = [indices]
     if not indices:
-        return "Say which elements to mirror, by index from list_sketch_geometry."
+        return "Say which elements to mirror, by index from describe_sketch."
 
     axis = str(arguments.get("axis", "X")).upper()
     # In a sketch, geometry -1 is the X axis and -2 is the Y axis.
@@ -511,7 +621,7 @@ HANDLERS = {
     "add_circle": add_circle,
     "pad": pad,
     "pocket": pocket,
-    "list_sketch_geometry": list_sketch_geometry,
+    "describe_sketch": describe_sketch,
     "delete_geometry": delete_geometry,
     "delete_object": delete_object,
     "add_line": add_line,

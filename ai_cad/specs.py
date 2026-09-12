@@ -90,21 +90,24 @@ SPECS = [
               "through_all": {"type": "boolean", "description": "Cut all the way through. Default false."},
           },
           ["sketch"]),
-    _spec("list_sketch_geometry",
-          "List what is drawn in a sketch, numbered, with positions and "
-          "sizes. Use this before deleting anything, and to check whether "
-          "the shape you want already exists.",
+    _spec("describe_sketch",
+          "The whole state of one sketch: what is drawn, numbered, with "
+          "positions and sizes, and under each element the constraints "
+          "holding it, numbered too. Ends with how many degrees of freedom "
+          "are left. Use this before drawing in a sketch, before deleting "
+          "anything, and before changing a size -- the constraint numbers "
+          "it gives back are the ones set_dimension takes.",
           {
               "sketch": {"type": "string", "description": "Name of the sketch."},
           },
           ["sketch"]),
     _spec("delete_geometry",
           "Delete drawn elements from a sketch by their index from "
-          "list_sketch_geometry. A rectangle is four separate lines, so "
+          "describe_sketch. A rectangle is four separate lines, so "
           "removing one means passing all four indices.",
           {
               "sketch": {"type": "string", "description": "Name of the sketch."},
-              "indices": {"type": "array", "items": {"type": "integer"}, "description": "Indices to delete, as reported by list_sketch_geometry."},
+              "indices": {"type": "array", "items": {"type": "integer"}, "description": "Indices to delete, as reported by describe_sketch."},
           },
           ["sketch", "indices"]),
     _spec("delete_object",
@@ -163,7 +166,7 @@ SPECS = [
     _spec("add_constraint",
           "Add a relationship between drawn elements: horizontal, vertical, "
           "parallel, perpendicular, equal, tangent, coincident, or a "
-          "dimension. Indices come from list_sketch_geometry. Point numbers "
+          "dimension. Indices come from describe_sketch. Point numbers "
           "are 1 for the start, 2 for the end, 3 for a centre.",
           {
               "sketch": {"type": "string", "description": "Name of the sketch."},
@@ -180,26 +183,19 @@ SPECS = [
           "origin.",
           {
               "sketch": {"type": "string", "description": "Name of the sketch."},
-              "indices": {"type": "array", "items": {"type": "integer"}, "description": "Indices to mirror, from list_sketch_geometry."},
+              "indices": {"type": "array", "items": {"type": "integer"}, "description": "Indices to mirror, from describe_sketch."},
               "axis": {"type": "string", "enum": ["X", "Y", "origin"], "description": "What to mirror about. Default X."},
           },
           ["sketch", "indices"]),
 
     # edit
-    _spec("list_constraints",
-          "List the dimensional constraints driving a sketch, numbered. Use "
-          "this before changing a size.",
-          {
-              "sketch": {"type": "string", "description": "Name of the sketch."},
-          },
-          ["sketch"]),
     _spec("set_dimension",
           "Change one constraint's value. This is how to resize something "
           "that is already drawn -- never draw a second shape to change a "
           "size.",
           {
               "sketch": {"type": "string", "description": "Name of the sketch."},
-              "index": {"type": "integer", "description": "Constraint index from list_constraints."},
+              "index": {"type": "integer", "description": "Constraint index from describe_sketch."},
               "value": {"type": "number", "description": "New value, mm or degrees."},
           },
           ["sketch", "index", "value"]),

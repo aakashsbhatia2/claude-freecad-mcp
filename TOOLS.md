@@ -9,8 +9,7 @@ The complete set. Anything not listed here, it cannot do.
 | `list_objects` | Bodies, sketches and features in the open document |
 | `describe_selection` | What is selected: which face or edge, its size and position |
 | `describe_object` | One object's bounding box, position and driving values |
-| `list_sketch_geometry` | What is drawn in a sketch, numbered |
-| `list_constraints` | The dimensions driving a sketch, numbered |
+| `describe_sketch` | Everything in a sketch: what is drawn, the constraints holding it, and what is still free |
 | `measure` | Shortest distance between the two things you have clicked |
 
 ### Drawing

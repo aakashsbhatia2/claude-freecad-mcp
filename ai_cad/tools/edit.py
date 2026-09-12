@@ -36,28 +36,6 @@ def _sketch(name):
     return sketch, None
 
 
-def list_constraints(arguments):
-    """The numbers driving a sketch, so one of them can be changed."""
-    sketch, error = _sketch(arguments.get("sketch"))
-    if error:
-        return error
-
-    lines = []
-    for index, constraint in enumerate(sketch.Constraints):
-        if constraint.Type not in DIMENSIONAL:
-            continue
-        if constraint.Type == "Angle":
-            value = "%s degrees" % rounded(math.degrees(constraint.Value))
-        else:
-            value = "%s mm" % rounded(constraint.Value)
-        label = " named '%s'" % constraint.Name if constraint.Name else ""
-        lines.append("%d: %s%s = %s" % (index, constraint.Type, label, value))
-
-    if not lines:
-        return "%s has no dimensional constraints." % sketch.Name
-    return "Dimensions in %s:\n%s" % (sketch.Name, "\n".join(lines))
-
-
 def set_dimension(arguments):
     """Change one constraint's value -- the proper way to resize a sketch."""
     sketch, error = _sketch(arguments.get("sketch"))
@@ -66,7 +44,7 @@ def set_dimension(arguments):
 
     index = arguments.get("index")
     if index is None:
-        return "Say which constraint to change, by index from list_constraints."
+        return "Say which constraint to change, by index from describe_sketch."
     index = int(index)
     if index < 0 or index >= len(sketch.Constraints):
         return "%s has constraints 0 to %d." % (sketch.Name, len(sketch.Constraints) - 1)
@@ -206,7 +184,6 @@ def set_sketch_plane(arguments):
 
 
 HANDLERS = {
-    "list_constraints": list_constraints,
     "set_dimension": set_dimension,
     "set_property": set_property,
     "rename_object": rename_object,
