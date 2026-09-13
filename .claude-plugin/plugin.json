@@ -1,7 +1,7 @@
 {
   "name": "claude-freecad-mcp",
   "description": "Drive a running FreeCAD in plain English. Reads what you have clicked in the 3D view.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": {
     "name": "Aakash Bhatia"
   },
