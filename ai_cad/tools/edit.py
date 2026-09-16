@@ -105,6 +105,29 @@ def rename_object(arguments):
     return "Renamed '%s' to '%s'." % (was, obj.Label)
 
 
+def _driven_elsewhere(obj):
+    """Why setting this object's placement would be thrown away, if it would.
+
+    A Part Design feature takes its position from the body it is in, and an
+    attached sketch from the plane or face it is on. FreeCAD accepts the
+    assignment either way and overwrites it on the next recompute, so the old
+    behaviour was to report a move that never happened.
+    """
+    if obj.isDerivedFrom("PartDesign::Feature"):
+        return ("%s is a Part Design feature, so its position comes from the "
+                "body and from the sketch it was made from -- setting it here "
+                "would be undone on the next recompute. Move the sketch "
+                "instead, or give the sketch an offset with set_sketch_plane, "
+                "or move the whole body." % obj.Label)
+    if (obj.TypeId == "Sketcher::SketchObject"
+            and getattr(obj, "MapMode", "Deactivated") != "Deactivated"):
+        return ("%s is attached to a plane or face, so its position is worked "
+                "out from that and setting it here would be undone. Use "
+                "set_sketch_plane with an offset to move it off that plane."
+                % obj.Label)
+    return None
+
+
 def move_object(arguments):
     """Set where an object sits. Absolute unless relative is true."""
     obj = find(arguments.get("name"))
@@ -112,6 +135,9 @@ def move_object(arguments):
         return "There is no object called '%s'." % arguments.get("name")
     if not hasattr(obj, "Placement"):
         return "%s has no placement to move." % obj.Label
+    refusal = _driven_elsewhere(obj)
+    if refusal:
+        return refusal
 
     offset = FreeCAD.Vector(
         float(arguments.get("x", 0.0)),
@@ -119,10 +145,18 @@ def move_object(arguments):
         float(arguments.get("z", 0.0)))
 
     placement = obj.Placement
-    placement.Base = placement.Base + offset if arguments.get("relative") else offset
+    wanted = placement.Base + offset if arguments.get("relative") else offset
+    placement.Base = wanted
     obj.Placement = placement
     document().recompute()
-    return "%s is now at %s." % (obj.Label, vector(obj.Placement.Base))
+
+    # Belt and braces: say so if FreeCAD quietly put it back.
+    landed = obj.Placement.Base
+    if landed.distanceToPoint(wanted) > 1e-6:
+        return ("%s did not move. It was asked for %s and is still at %s, so "
+                "something else is driving its position." % (
+                    obj.Label, vector(wanted), vector(landed)))
+    return "%s is now at %s." % (obj.Label, vector(landed))
 
 
 def rotate_object(arguments):
@@ -132,6 +166,9 @@ def rotate_object(arguments):
         return "There is no object called '%s'." % arguments.get("name")
     if not hasattr(obj, "Placement"):
         return "%s has no placement to rotate." % obj.Label
+    refusal = _driven_elsewhere(obj)
+    if refusal:
+        return refusal
 
     axes = {"X": FreeCAD.Vector(1, 0, 0),
             "Y": FreeCAD.Vector(0, 1, 0),
@@ -179,7 +216,15 @@ def set_sketch_plane(arguments):
         where = "the %s plane" % plane
 
     sketch.MapMode = "FlatFace"
+    offset = float(arguments.get("offset") or 0.0)
+    sketch.AttachmentOffset = FreeCAD.Placement(
+        FreeCAD.Vector(0, 0, offset), FreeCAD.Rotation())
     document().recompute()
+
+    if offset:
+        return "%s is now %s mm off %s, with its origin at %s." % (
+            sketch.Name, rounded(offset), where,
+            vector(sketch.getGlobalPlacement().Base))
     return "%s is now on %s." % (sketch.Name, where)
 
 

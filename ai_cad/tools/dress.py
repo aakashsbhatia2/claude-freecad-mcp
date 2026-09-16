@@ -6,7 +6,7 @@ left one" from a description alone is a separate, much harder problem.
 
 import FreeCADGui
 
-from ai_cad.util import document, find, rounded
+from ai_cad.util import document, find, rounded, set_tip, why
 
 # Clearance drill sizes, so "an M4 clearance hole" means something.
 CLEARANCE = {"M2": 2.4, "M2.5": 2.9, "M3": 3.4, "M4": 4.5, "M5": 5.5, "M6": 6.6, "M8": 9.0}
@@ -55,11 +55,14 @@ def _apply_dressup(kind, size_property, size, label):
     doc = document()
     doc.recompute()
     if "Invalid" in getattr(feature, "State", []):
-        error = getattr(feature, "Error", "no reason given")
+        reason = why(feature) or ("FreeCAD gave no reason. The usual cause is "
+                                  "a radius too big for the edges picked.")
         doc.removeObject(feature.Name)
         doc.recompute()
-        return "That %s failed and was undone: %s" % (label, error)
+        return "That %s failed and was undone: %s" % (label, reason)
 
+    set_tip(body, feature)
+    doc.recompute()
     return "%s %d edge(s) at %s mm as %s." % (
         label, len(edges), rounded(size), feature.Name)
 
@@ -141,12 +144,14 @@ def hole(arguments):
     doc = document()
     doc.recompute()
     if "Invalid" in getattr(feature, "State", []):
-        error = getattr(feature, "Error", "no reason given")
+        reason = why(feature) or "FreeCAD gave no reason."
         doc.removeObject(feature.Name)
         doc.removeObject(sketch.Name)
         doc.recompute()
-        return "That hole failed and was undone: %s" % error
+        return "That hole failed and was undone: %s" % reason
 
+    set_tip(body, feature)
+    doc.recompute()
     return "Drilled %d hole(s) of %s mm, %s, on %s as %s." % (
         len(positions), rounded(diameter), depth, face_name, feature.Name)
 

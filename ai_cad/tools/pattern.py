@@ -1,6 +1,6 @@
 """Repeating a feature: rows of holes, bolt circles, mirrored brackets."""
 
-from ai_cad.util import document, find, rounded
+from ai_cad.util import document, find, rounded, set_tip, why
 
 AXES = {"X": "X_Axis", "Y": "Y_Axis", "Z": "Z_Axis"}
 PLANES = {"XY": "XY_Plane", "XZ": "XZ_Plane", "YZ": "YZ_Plane"}
@@ -22,6 +22,31 @@ def _origin_feature(body, wanted):
     return None
 
 
+# When FreeCAD declines to say why, all we can honestly do is point at the
+# things worth checking. No guessing at a cause in the wording.
+USUAL_CAUSE = ("Worth checking: that the copies still meet the rest of the "
+               "solid, and that the count and spacing suit the size of the "
+               "part. describe_object on the body's tip will show you where "
+               "the part actually sits.")
+
+
+def _already_repeated(obj):
+    """Patterns and mirrors cannot themselves be patterned or mirrored.
+
+    FreeCAD only transforms an additive or subtractive feature -- a pad or a
+    pocket. Pointed at another pattern it builds the feature, fails on
+    recompute and says so; catching it here says it before anything is made,
+    and names the pad to use instead.
+    """
+    if not obj.isDerivedFrom("PartDesign::Transformed"):
+        return None
+    originals = [o.Label for o in getattr(obj, "Originals", [])]
+    instead = (" Point this at %s instead, and fold the repeats you wanted "
+               "into one pattern." % " and ".join(originals)) if originals else ""
+    return ("%s is itself a pattern, and FreeCAD can only repeat or mirror a "
+            "pad or a pocket -- not another pattern.%s" % (obj.Label, instead))
+
+
 def _feature_named(name):
     obj = find(name)
     if obj is None:
@@ -29,16 +54,24 @@ def _feature_named(name):
     body = _body_of(obj)
     if body is None:
         return None, None, "%s is not inside a Part Design body." % obj.Label
+    repeated = _already_repeated(obj)
+    if repeated:
+        return None, None, repeated
     return obj, body, None
 
 
-def _finish(feature, doc, description):
+def _finish(feature, body, doc, description):
     doc.recompute()
     if "Invalid" in getattr(feature, "State", []):
-        error = getattr(feature, "Error", "no reason given")
+        reason = why(feature)
         doc.removeObject(feature.Name)
         doc.recompute()
-        return "That %s failed and was undone: %s" % (description, error)
+        if reason:
+            return "That %s failed and was undone: %s" % (description, reason)
+        return "That %s failed and was undone. FreeCAD gave no reason. %s" % (
+            description, USUAL_CAUSE)
+    set_tip(body, feature)
+    doc.recompute()
     return None
 
 
@@ -62,7 +95,7 @@ def linear_pattern(arguments):
     feature.Occurrences = int(arguments["count"])
     feature.Reversed = bool(arguments.get("reversed", False))
 
-    problem = _finish(feature, document(), "pattern")
+    problem = _finish(feature, body, document(), "pattern")
     if problem:
         return problem
     return "Repeated %s %d times over %s mm along %s." % (
@@ -88,7 +121,7 @@ def polar_pattern(arguments):
     feature.Angle = float(arguments.get("angle", 360.0))
     feature.Occurrences = int(arguments["count"])
 
-    problem = _finish(feature, document(), "pattern")
+    problem = _finish(feature, body, document(), "pattern")
     if problem:
         return problem
     return "Repeated %s %d times over %s degrees about %s." % (
@@ -112,7 +145,7 @@ def mirror_feature(arguments):
     feature.Originals = [obj]
     feature.MirrorPlane = (reference, [""])
 
-    problem = _finish(feature, document(), "mirror")
+    problem = _finish(feature, body, document(), "mirror")
     if problem:
         return problem
     return "Mirrored %s across the %s plane." % (obj.Label, plane)

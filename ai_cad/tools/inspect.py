@@ -72,6 +72,38 @@ def describe_selection(_arguments):
     return "\n".join(lines)
 
 
+def _body_of(obj):
+    """The Part Design body a feature belongs to, if any."""
+    doc = document()
+    if doc is None:
+        return None
+    for candidate in doc.Objects:
+        if candidate.TypeId == "PartDesign::Body" and obj in candidate.Group:
+            return candidate
+    return None
+
+
+def _standing(obj):
+    """Where a feature sits in its body: the finished shape, or partway there.
+
+    A feature in the middle of the tree has a shape of its own, and a volume
+    that reads exactly like a finished part. Saying which is which here stops
+    that number being quoted as the answer.
+    """
+    if not obj.isDerivedFrom("PartDesign::Feature"):
+        return None
+    body = _body_of(obj)
+    tip = getattr(body, "Tip", None) if body is not None else None
+    if tip is None:
+        return None
+    if tip is obj:
+        return "This is the tip of %s: the finished shape of the part." % body.Label
+    return ("CAREFUL: this is partway through %s, not the finished part. "
+            "Everything above is this feature's own shape at this point in "
+            "the tree. The finished shape is %s -- describe that one for the "
+            "numbers to quote." % (body.Label, tip.Label))
+
+
 def describe_object(arguments):
     name = arguments.get("name")
     if not name:
@@ -102,6 +134,10 @@ def describe_object(arguments):
     for prop in obj.PropertiesList:
         if obj.getTypeIdOfProperty(prop) in ("App::PropertyLength", "App::PropertyDistance"):
             lines.append("%s = %s mm" % (prop, rounded(getattr(obj, prop).Value)))
+
+    standing = _standing(obj)
+    if standing:
+        lines.append(standing)
 
     return "\n".join(lines)
 

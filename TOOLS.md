@@ -8,7 +8,7 @@ The complete set. Anything not listed here, it cannot do.
 |---|---|
 | `list_objects` | Bodies, sketches and features in the open document |
 | `describe_selection` | What is selected: which face or edge, its size and position |
-| `describe_object` | One object's bounding box, position and driving values |
+| `describe_object` | One object's bounding box, position and driving values, and whether it is the finished shape |
 | `describe_sketch` | Everything in a sketch: what is drawn, the constraints holding it, and what is still free |
 | `measure` | Shortest distance between the two things you have clicked |
 
@@ -16,7 +16,7 @@ The complete set. Anything not listed here, it cannot do.
 
 | Tool | What it does |
 |---|---|
-| `create_sketch` | New sketch on XY, XZ, YZ, or the face you have clicked |
+| `create_sketch` | New sketch on XY, XZ, YZ, or the face you have clicked, optionally set back from it by a distance |
 | `add_rectangle` | Fully constrained rectangle, by width and height |
 | `add_circle` | Fully constrained circle, by diameter |
 | `add_line` | A single line between two points |
@@ -47,9 +47,9 @@ The complete set. Anything not listed here, it cannot do.
 | `set_dimension` | Changes a constraint's value |
 | `set_property` | Changes a feature's own value, such as a pad's length |
 | `rename_object` | Gives an object a meaningful name in the tree |
-| `move_object` | Sets or shifts an object's position |
+| `move_object` | Sets or shifts a sketch's or a body's position |
 | `rotate_object` | Rotates about X, Y or Z |
-| `set_sketch_plane` | Re-attaches a sketch to a different plane or face |
+| `set_sketch_plane` | Re-attaches a sketch to a different plane or face, with the same optional offset |
 | `delete_object` | Deletes a whole sketch, pad or pocket |
 
 ### The document
@@ -66,6 +66,25 @@ The complete set. Anything not listed here, it cannot do.
 
 Every call is one undo step, so Ctrl+Z in FreeCAD takes back one thing at a
 time.
+
+## Where a sketch can go
+
+A sketch attaches to one of the three origin planes or to a face you have
+clicked, and `offset` sets it back from there along the plane's normal. A wall
+141 mm out is a sketch on YZ with an offset of 141 — one sketch and one pad,
+rather than building it at the origin and trying to move it afterwards. The
+reply says the position it ended up at, so you can check it went the way you
+meant.
+
+Features cannot be moved after the fact: a pad takes its position from the
+sketch it was made from, so `move_object` refuses rather than reporting a move
+that FreeCAD will undo on the next recompute.
+
+## The finished shape
+
+Only the body's tip describes the finished part. A feature in the middle of the
+tree has a shape and a volume of its own, and they read exactly like a finished
+part's — `describe_object` says which one you are looking at.
 
 ## Selection
 

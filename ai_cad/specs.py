@@ -34,7 +34,11 @@ SPECS = [
           "position. Use this whenever the user says 'this' or 'that'."),
     _spec("describe_object",
           "Report one object's dimensions, position and driving values, "
-          "such as a pad's length or a box's sides.",
+          "such as a pad's length or a box's sides. For a feature inside a "
+          "body it also says whether that feature is the tip. Only the tip's "
+          "volume and bounding box describe the finished part -- anything "
+          "earlier in the tree is a half-built shape, so never quote its "
+          "numbers as the part's.",
           {
               "name": {"type": "string", "description": "The object's label in the tree, or its internal name."},
           },
@@ -48,6 +52,7 @@ SPECS = [
           "later call -- do not invent one.",
           {
               "plane": {"type": "string", "enum": ["XY", "XZ", "YZ", "selection"], "description": "Which plane to draw on. Use 'selection' for the clicked face."},
+              "offset": {"type": "number", "description": "How far off that plane to sit, in mm, measured along the plane's normal. This is how you draw a wall at x=141 without building it somewhere else and moving it. Negative goes the other way. The reply says where it ended up. Default 0."},
               "name": {"type": "string", "description": "What to call it in the tree. Optional."},
           }),
     _spec("add_rectangle",
@@ -216,8 +221,12 @@ SPECS = [
           },
           ["name", "new_name"]),
     _spec("move_object",
-          "Move an object. Absolute position by default; set relative to "
-          "shift it from where it is.",
+          "Move a sketch or a body. Absolute position by default; set "
+          "relative to shift it from where it is. This will not move a pad, "
+          "pocket or pattern -- those take their position from the body and "
+          "the sketch they were made from, and it says so rather than "
+          "pretending. To put a feature somewhere else, give its sketch an "
+          "offset when you create it.",
           {
               "name": {"type": "string", "description": "The object to move."},
               "x": {"type": "number", "description": "X in mm. Default 0."},
@@ -240,6 +249,7 @@ SPECS = [
           {
               "sketch": {"type": "string", "description": "Name of the sketch."},
               "plane": {"type": "string", "enum": ["XY", "XZ", "YZ", "selection"], "description": "Where to put it."},
+              "offset": {"type": "number", "description": "How far off that plane to sit, in mm, measured along the plane's normal. This is how you draw a wall at x=141 without building it somewhere else and moving it. Negative goes the other way. The reply says where it ended up. Default 0."},
           },
           ["sketch", "plane"]),
 

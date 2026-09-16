@@ -15,7 +15,7 @@ import Sketcher
 
 from FreeCAD import Vector
 
-from ai_cad.util import document, find, rounded
+from ai_cad.util import document, find, rounded, vector
 
 PLANES = {"XY": "XY_Plane", "XZ": "XZ_Plane", "YZ": "YZ_Plane"}
 
@@ -78,6 +78,18 @@ def _report(obj, doc):
     return None
 
 
+def _offset_sketch(sketch, distance):
+    """Lift a sketch off the plane it is attached to, along that plane's normal.
+
+    This is what lets a wall 141 mm from the origin be drawn directly. Local Z
+    is the normal of whatever the sketch is attached to, so one number moves it
+    the only way that makes sense, and the caller reports where it landed
+    rather than claiming which world axis that was.
+    """
+    sketch.AttachmentOffset = FreeCAD.Placement(
+        Vector(0, 0, distance), FreeCAD.Rotation())
+
+
 def create_sketch(arguments):
     """Start a sketch on an origin plane, or on the face the user has clicked."""
     plane = (arguments.get("plane") or "XY").upper()
@@ -104,11 +116,18 @@ def create_sketch(arguments):
     sketch = body.newObject("Sketcher::SketchObject", "Sketch")
     sketch.AttachmentSupport = support
     sketch.MapMode = "FlatFace"
+    offset = float(arguments.get("offset") or 0.0)
+    if offset:
+        _offset_sketch(sketch, offset)
     if arguments.get("name"):
         sketch.Label = str(arguments["name"])
     doc.recompute()
-    return "Created an empty sketch on %s in body %s. Call it '%s' from now on." % (
-        where, body.Label, sketch.Label)
+
+    text = "Created an empty sketch on %s in body %s." % (where, body.Label)
+    if offset:
+        text += " It is %s mm off that plane, with its origin at %s." % (
+            rounded(offset), vector(sketch.getGlobalPlacement().Base))
+    return text + " Call it '%s' from now on." % sketch.Label
 
 
 def add_rectangle(arguments):
