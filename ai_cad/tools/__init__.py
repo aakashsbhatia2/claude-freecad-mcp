@@ -64,12 +64,23 @@ def call(name, arguments):
     if doc is not None:
         doc.openTransaction(name)
     try:
-        return True, handler(arguments)
+        return True, _labelled(handler(arguments))
     except Exception as exc:
-        return False, "%s failed: %s: %s" % (name, type(exc).__name__, exc)
+        return False, _labelled("%s failed: %s: %s" % (name, type(exc).__name__, exc))
     finally:
         if doc is not None:
             doc.commitTransaction()
+
+
+def _labelled(text):
+    """Start every reply with the document it happened in.
+
+    The tools act on whichever document is active, and the user can change
+    that by clicking a tab at any moment. Naming it on every reply is what
+    lets a wrong one be noticed before anything is exported from it.
+    """
+    doc = FreeCAD.ActiveDocument
+    return "[%s] %s" % (doc.Label, text) if doc is not None else text
 
 
 def dispatch(name, arguments):

@@ -15,7 +15,8 @@ import Sketcher
 
 from FreeCAD import Vector
 
-from ai_cad.util import document, find, rounded, vector
+from ai_cad.util import (body_of, direction, document, facing, find,
+                         orientation, remove_feature, rounded, solid_volume)
 
 PLANES = {"XY": "XY_Plane", "XZ": "XZ_Plane", "YZ": "YZ_Plane"}
 
@@ -27,17 +28,72 @@ def _require_document():
     return doc
 
 
-def _active_body(doc):
-    """The body new features go into, creating one on first use."""
-    view = FreeCADGui.ActiveDocument.ActiveView
-    body = view.getActiveObject("pdbody")
-    if body is not None and body.Document is doc:
-        return body
+def _bodies(doc):
+    return [o for o in doc.Objects if o.TypeId == "PartDesign::Body"]
 
-    bodies = [o for o in doc.Objects if o.TypeId == "PartDesign::Body"]
+
+def _gui_active_body():
+    gui = FreeCADGui.ActiveDocument
+    return gui.ActiveView.getActiveObject("pdbody") if gui is not None else None
+
+
+def _make_active(body):
+    """Show the body as active in FreeCAD, so the tree matches what we did."""
+    gui = FreeCADGui.getDocument(body.Document.Name)
+    if gui is not None and gui.ActiveView is not None:
+        gui.ActiveView.setActiveObject("pdbody", body)
+
+
+def _active_body(doc):
+    """The body new features go into, creating one on first use.
+
+    Returns (body, None), or (None, reason) when there are several bodies and
+    none is marked active -- guessing there puts a sketch in the wrong part.
+    """
+    body = _gui_active_body()
+    if body is not None and body.Document is doc:
+        return body, None
+
+    bodies = _bodies(doc)
+    if len(bodies) > 1:
+        return None, ("'%s' has several bodies and none is active: %s. Say "
+                      "which one with body." % (
+                          doc.Label, ", ".join(b.Label for b in bodies)))
     body = bodies[0] if bodies else doc.addObject("PartDesign::Body", "Body")
-    view.setActiveObject("pdbody", body)
-    return body
+    _make_active(body)
+    return body, None
+
+
+def _body_named(doc, name):
+    obj = find(name)
+    if obj is None or obj.TypeId != "PartDesign::Body":
+        bodies = _bodies(doc)
+        listed = ", ".join(b.Label for b in bodies) if bodies else "none yet"
+        return None, "There is no body called '%s'. The bodies are: %s." % (name, listed)
+    return obj, None
+
+
+def _body_of_sketch(sketch):
+    """A feature goes in the body its sketch is in, not whichever is active."""
+    body = body_of(sketch)
+    if body is None:
+        return None, "%s is not inside a body." % sketch.Label
+    return body, None
+
+
+def create_body(arguments):
+    """A separate solid: a second part, a nut, anything that must not fuse."""
+    doc = _require_document()
+    body = doc.addObject("PartDesign::Body", "Body")
+    if arguments.get("name"):
+        body.Label = str(arguments["name"])
+    _make_active(body)
+    doc.recompute()
+    others = [b.Label for b in _bodies(doc) if b is not body]
+    text = "Created body '%s'. It is the active body now" % body.Label
+    if others:
+        text += ", separate from %s" % ", ".join(others)
+    return text + ". Pass body='%s' to create_sketch to draw in it." % body.Label
 
 
 def _origin_plane(body, plane):
@@ -94,14 +150,31 @@ def create_sketch(arguments):
     """Start a sketch on an origin plane, or on the face the user has clicked."""
     plane = (arguments.get("plane") or "XY").upper()
     doc = _require_document()
-    body = _active_body(doc)
-
+    faces = []
     if plane == "SELECTION":
         selection = FreeCADGui.Selection.getSelectionEx()
         faces = [(e.Object, n) for e in selection for n in e.SubElementNames
                  if n.startswith("Face")]
         if not faces:
             return "No face is selected. Ask the user to click the face to sketch on."
+
+    if arguments.get("body"):
+        body, error = _body_named(doc, arguments["body"])
+    elif faces and body_of(faces[0][0]) is not None:
+        # A sketch can only sit on a face of its own body.
+        body, error = body_of(faces[0][0]), None
+    else:
+        body, error = _active_body(doc)
+    if error:
+        return error
+    _make_active(body)
+
+    if faces:
+        owner = body_of(faces[0][0])
+        if owner is not None and owner is not body:
+            return ("That face belongs to %s, and a sketch in %s cannot sit on "
+                    "it. Use an origin plane with an offset instead." % (
+                        owner.Label, body.Label))
         support = [faces[0]]
         where = "%s of %s" % (faces[0][1], faces[0][0].Label)
     else:
@@ -123,11 +196,11 @@ def create_sketch(arguments):
         sketch.Label = str(arguments["name"])
     doc.recompute()
 
-    text = "Created an empty sketch on %s in body %s." % (where, body.Label)
+    text = "Created an empty sketch on %s in body %s" % (where, body.Label)
     if offset:
-        text += " It is %s mm off that plane, with its origin at %s." % (
-            rounded(offset), vector(sketch.getGlobalPlacement().Base))
-    return text + " Call it '%s' from now on." % sketch.Label
+        text += ", %s mm off it" % rounded(offset)
+    return "%s. %s Call it '%s' from now on." % (
+        text, orientation(sketch), sketch.Label)
 
 
 def add_rectangle(arguments):
@@ -227,7 +300,9 @@ def pad(arguments):
         return "%s is empty -- draw something in it first." % sketch.Name
 
     doc = document()
-    body = _active_body(doc)
+    body, error = _body_of_sketch(sketch)
+    if error:
+        return error
     feature = body.newObject("PartDesign::Pad", "Pad")
     feature.Profile = sketch
     feature.Length = float(arguments["length"])
@@ -237,8 +312,8 @@ def pad(arguments):
     problem = _report(feature, doc)
     if problem:
         return problem
-    return "Padded %s by %s mm as %s." % (
-        sketch.Name, rounded(feature.Length.Value), feature.Name)
+    return "Padded %s by %s mm as %s, in %s." % (
+        sketch.Label, rounded(feature.Length.Value), feature.Name, body.Label)
 
 
 def pocket(arguments):
@@ -249,9 +324,16 @@ def pocket(arguments):
         return "%s is empty -- draw something in it first." % sketch.Name
 
     doc = document()
-    body = _active_body(doc)
+    body, error = _body_of_sketch(sketch)
+    if error:
+        return error
+    before = solid_volume(body.Tip) if body.Tip is not None else 0.0
+    if before <= 0:
+        return "%s has no solid yet, so there is nothing to cut into." % body.Label
+
     feature = body.newObject("PartDesign::Pocket", "Pocket")
     feature.Profile = sketch
+    feature.Reversed = bool(arguments.get("reversed", False))
 
     if arguments.get("through_all"):
         feature.Type = 1  # ThroughAll
@@ -263,7 +345,23 @@ def pocket(arguments):
     problem = _report(feature, doc)
     if problem:
         return problem
-    return "Cut %s into the body, %s, as %s." % (sketch.Name, depth, feature.Name)
+
+    # A pocket cuts against the way its sketch faces; reversed cuts with it.
+    way = facing(sketch)
+    toward = direction(way if feature.Reversed else -way)
+    removed = before - solid_volume(feature)
+
+    if removed < 1e-6:
+        remove_feature(feature)
+        doc.recompute()
+        return ("That pocket removed nothing, so it was taken out again. It cut "
+                "%s towards %s, and there is no material that way from %s. "
+                "Call pocket again with reversed set the other way, or move the "
+                "sketch onto the part with an offset. %s" % (
+                    depth, toward, sketch.Label, orientation(sketch)))
+
+    return "Cut %s %s towards %s, removing %s mm3, as %s, in %s." % (
+        sketch.Label, depth, toward, rounded(removed), feature.Name, body.Label)
 
 
 # Where a constraint's endpoint sits on the geometry it names.
@@ -414,18 +512,59 @@ def delete_geometry(arguments):
         len(indices), sketch.Name, _constraint_state(sketch))
 
 
+def _profile_of(obj):
+    """The sketch a pad, pocket or hole was made from, if it has one."""
+    link = getattr(obj, "Profile", None)
+    if isinstance(link, tuple):
+        link = link[0] if link else None
+    if link is not None and link.TypeId == "Sketcher::SketchObject":
+        return link
+    return None
+
+
+def _users(sketch):
+    """Features built from a sketch. The body lists it too, but only as a member."""
+    return [o for o in sketch.InList if o.TypeId != "PartDesign::Body"]
+
+
 def delete_object(arguments):
-    """Remove a whole sketch, pad or pocket from the document."""
+    """Remove a sketch, pad or pocket without breaking the rest of the body."""
     name = arguments.get("name")
     obj = find(name)
     if obj is None:
         return "There is no object called '%s'." % name
 
+    if obj.TypeId == "Sketcher::SketchObject":
+        users = _users(obj)
+        if users:
+            return ("%s is what %s is made from, so deleting it would break "
+                    "that. Delete %s instead -- its sketch goes with it." % (
+                        obj.Label, ", ".join(u.Label for u in users),
+                        " and ".join(u.Label for u in users)))
+
     doc = document()
     label = obj.Label
-    doc.removeObject(obj.Name)
+    body = body_of(obj)
+    profile = _profile_of(obj)
+
+    remove_feature(obj)
+    gone = [label]
+    # Left behind, a sketch with nothing built from it hangs in space in the
+    # 3D view -- the "random circles floating" -- so it goes too.
+    if profile is not None and not _users(profile):
+        gone.append(profile.Label)
+        remove_feature(profile)
     doc.recompute()
-    return "Deleted %s." % label
+
+    text = "Deleted %s." % " and its sketch ".join(gone)
+    if body is not None:
+        broken = [o.Label for o in body.Group
+                  if "Invalid" in getattr(o, "State", [])]
+        if broken:
+            text += " These no longer work and need looking at: %s." % ", ".join(broken)
+        if body.Tip is not None:
+            text += " %s now ends at %s." % (body.Label, body.Tip.Label)
+    return text
 
 
 def _pin_point(sketch, geo, pos, x, y):
@@ -635,6 +774,7 @@ def mirror_geometry(arguments):
 
 
 HANDLERS = {
+    "create_body": create_body,
     "create_sketch": create_sketch,
     "add_rectangle": add_rectangle,
     "add_circle": add_circle,

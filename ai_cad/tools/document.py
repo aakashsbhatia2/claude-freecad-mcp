@@ -5,7 +5,7 @@ import os
 import FreeCAD
 import FreeCADGui
 
-from ai_cad.util import document, find, rounded
+from ai_cad.util import body_of, document, find, rounded, solid_volume
 
 VIEWS = {
     "isometric": "viewIsometric", "top": "viewTop", "bottom": "viewBottom",
@@ -18,6 +18,46 @@ def new_document(arguments):
     doc = FreeCAD.newDocument(name)
     FreeCAD.setActiveDocument(doc.Name)
     return "Created document '%s'. It is the active one now." % doc.Label
+
+
+def _open_documents():
+    return list(FreeCAD.listDocuments().values())
+
+
+def _document_named(name):
+    for doc in _open_documents():
+        if name in (doc.Name, doc.Label):
+            return doc
+    return None
+
+
+def _open_list():
+    docs = _open_documents()
+    if not docs:
+        return "No documents are open."
+    return "Open documents: %s." % ", ".join("'%s'" % d.Label for d in docs)
+
+
+def switch_document(arguments):
+    """Make another open document the one every tool works on."""
+    name = arguments.get("name")
+    doc = _document_named(name) if name else None
+    if doc is None:
+        return "There is no open document called '%s'. %s" % (name, _open_list())
+
+    FreeCAD.setActiveDocument(doc.Name)
+    try:
+        FreeCADGui.setActiveDocument(doc.Name)
+    except Exception:
+        pass
+
+    # The GUI can keep another tab in front, and the tools follow the GUI.
+    # Say so rather than carry on in the wrong file.
+    gui = FreeCADGui.ActiveDocument
+    if gui is None or gui.Document.Name != doc.Name:
+        return ("Could not bring '%s' to the front. Ask the user to click its "
+                "tab in FreeCAD, then check with list_objects." % doc.Label)
+    return "'%s' is the active document now." % doc.Label
 
 
 def undo(_arguments):
@@ -85,23 +125,56 @@ def measure(_arguments):
         rounded(end.x), rounded(end.y), rounded(end.z))
 
 
-def _exportable(name):
-    if name:
-        obj = find(name)
-        if obj is None:
-            return None, "There is no object called '%s'." % name
-        return obj, None
+def _exportable(arguments):
+    """The object to write, from the document asked for.
 
-    doc = document()
+    Asking for a document by name keeps an export from following whichever
+    tab the user last clicked: two open parts both had a Pad001, and the bar
+    was written into the splice's file.
+    """
+    wanted = arguments.get("document")
+    if wanted:
+        doc = _document_named(wanted)
+        if doc is None:
+            return None, "There is no open document called '%s'. %s" % (
+                wanted, _open_list())
+    else:
+        doc = document()
     if doc is None:
         return None, "No document is open. Use new_document to start one."
+
+    name = arguments.get("name")
+    if name:
+        obj = doc.getObject(name)
+        if obj is None:
+            matches = doc.getObjectsByLabel(name)
+            obj = matches[0] if matches else None
+        if obj is None:
+            return None, "There is no object called '%s' in '%s'." % (name, doc.Label)
+        body = body_of(obj)
+        # A feature partway through the tree is a half-built part.
+        if body is not None and body.Tip is not obj:
+            return None, ("%s is partway through %s, so exporting it would "
+                          "write a half-built part. Export %s instead." % (
+                              obj.Label, body.Label, body.Label))
+        return obj, None
+
     bodies = [o for o in doc.Objects if o.TypeId == "PartDesign::Body"]
     if len(bodies) == 1:
         return bodies[0], None
     if not bodies:
-        return None, "There is no body to export."
-    return None, "There are several bodies -- say which one: %s." % ", ".join(
-        b.Label for b in bodies)
+        return None, "There is no body in '%s' to export." % doc.Label
+    return None, "'%s' has several bodies -- say which one: %s." % (
+        doc.Label, ", ".join(b.Label for b in bodies))
+
+
+def _what_was_written(obj, path):
+    """Enough to tell two parts apart from the reply alone."""
+    box = obj.Shape.BoundBox
+    return "Exported %s from '%s' to %s (%s): %s x %s x %s mm, %s mm3." % (
+        obj.Label, obj.Document.Label, path, _written(path),
+        rounded(box.XLength), rounded(box.YLength), rounded(box.ZLength),
+        rounded(solid_volume(obj)))
 
 
 # Triangle formats FreeCAD writes from one call, picked by extension.
@@ -124,7 +197,7 @@ def export_mesh(arguments):
     """Triangles for a slicer, in whichever of the mesh formats was asked for."""
     import Mesh
 
-    obj, error = _exportable(arguments.get("name"))
+    obj, error = _exportable(arguments)
     if error:
         return error
 
@@ -141,14 +214,14 @@ def export_mesh(arguments):
         path += "." + fmt
 
     Mesh.export([obj], path)
-    return "Exported %s to %s (%s)." % (obj.Label, path, _written(path))
+    return _what_was_written(obj, path)
 
 
 def export_step(arguments):
     """STEP keeps the real curved surfaces, for handing to other CAD."""
     import Part
 
-    obj, error = _exportable(arguments.get("name"))
+    obj, error = _exportable(arguments)
     if error:
         return error
 
@@ -157,11 +230,12 @@ def export_step(arguments):
         path += ".step"
 
     Part.export([obj], path)
-    return "Exported %s to %s (%s)." % (obj.Label, path, _written(path))
+    return _what_was_written(obj, path)
 
 
 HANDLERS = {
     "new_document": new_document,
+    "switch_document": switch_document,
     "undo": undo,
     "save_document": save_document,
     "fit_view": fit_view,

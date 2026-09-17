@@ -9,7 +9,7 @@ import math
 
 import FreeCAD
 
-from ai_cad.util import document, find, rounded, vector
+from ai_cad.util import document, find, orientation, rounded, vector
 
 # Constraints that carry a number the user could sensibly change.
 DIMENSIONAL = ("Distance", "DistanceX", "DistanceY", "Radius", "Diameter", "Angle")
@@ -221,11 +221,8 @@ def set_sketch_plane(arguments):
         FreeCAD.Vector(0, 0, offset), FreeCAD.Rotation())
     document().recompute()
 
-    if offset:
-        return "%s is now %s mm off %s, with its origin at %s." % (
-            sketch.Name, rounded(offset), where,
-            vector(sketch.getGlobalPlacement().Base))
-    return "%s is now on %s." % (sketch.Name, where)
+    where = "%s mm off %s" % (rounded(offset), where) if offset else "on " + where
+    return "%s is now %s. %s" % (sketch.Label, where, orientation(sketch))
 
 
 HANDLERS = {

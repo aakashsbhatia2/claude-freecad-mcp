@@ -26,8 +26,21 @@ SPECS = [
     # inspect
     _spec("list_objects",
           "List everything in the open FreeCAD document: bodies, sketches "
-          "and features, with their types. Use this first to see what "
-          "exists."),
+          "and features, with their types and the body each is in. Use this "
+          "first to see what exists."),
+    _spec("check_interference",
+          "Check two parts against each other as they sit in the model: "
+          "whether they overlap, and by how much and where; whether they "
+          "touch with no gap; or how far apart they are at the closest "
+          "point. Run it on every pair of parts that fit together, bolt "
+          "together or sit near each other, before saying a design works. "
+          "The parts must be separate bodies in the same document -- a "
+          "feature's name stands for the body it is in.",
+          {
+              "body_a": {"type": "string", "description": "The first body."},
+              "body_b": {"type": "string", "description": "The second body."},
+          },
+          ["body_a", "body_b"]),
     _spec("describe_selection",
           "Describe what the user has currently clicked in the 3D view or "
           "the tree -- which faces, edges or objects, and their size and "
@@ -45,15 +58,31 @@ SPECS = [
           ["name"]),
 
     # build
+    _spec("create_body",
+          "Start a new, separate solid in the open document. Anything in "
+          "its own body stays its own part: it is not fused into the others, "
+          "it can be moved and rotated as a whole with move_object and "
+          "rotate_object, and check_interference can test it against "
+          "another. Use one per physical part -- a bracket, a nut, a board.",
+          {
+              "name": {"type": "string", "description": "What to call it, e.g. splice or hex_nut."},
+          }),
     _spec("create_sketch",
           "Start a new empty sketch, either on one of the three origin "
           "planes or on the flat face the user has clicked. Creates a body "
           "if the document has none. Use the name it gives back for every "
-          "later call -- do not invent one.",
+          "later call -- do not invent one. The reply says where the "
+          "sketch's (0, 0) is in the model and which way its X and Y run: "
+          "read it before placing anything, because a sketch on a clicked "
+          "face uses that face's directions, not the model's. Prefer an "
+          "origin plane with an offset over a clicked face -- a sketch on a "
+          "face can move to a different face when anything earlier in the "
+          "tree changes.",
           {
               "plane": {"type": "string", "enum": ["XY", "XZ", "YZ", "selection"], "description": "Which plane to draw on. Use 'selection' for the clicked face."},
               "offset": {"type": "number", "description": "How far off that plane to sit, in mm, measured along the plane's normal. This is how you draw a wall at x=141 without building it somewhere else and moving it. Negative goes the other way. The reply says where it ended up. Default 0."},
               "name": {"type": "string", "description": "What to call it in the tree. Optional."},
+              "body": {"type": "string", "description": "Which body to draw in. Needed when there are several and none is active. On a clicked face, the face's own body is used."},
           }),
     _spec("add_rectangle",
           "Draw a fully constrained rectangle in a sketch. Sizes are in "
@@ -88,11 +117,15 @@ SPECS = [
           ["sketch", "length"]),
     _spec("pocket",
           "Cut a sketch into the existing solid, to a depth or all the way "
-          "through.",
+          "through. It cuts against the way the sketch faces -- a sketch on "
+          "XY faces +Z, so it cuts towards -Z -- and reversed cuts the other "
+          "way. The reply says which way it cut and how much it removed. A "
+          "pocket that removes nothing is taken out again and says so.",
           {
               "sketch": {"type": "string", "description": "Name of the sketch to cut with."},
               "depth": {"type": "number", "description": "Depth in mm. Ignored if through_all is true."},
               "through_all": {"type": "boolean", "description": "Cut all the way through. Default false."},
+              "reversed": {"type": "boolean", "description": "Cut the way the sketch faces instead of against it. Default false."},
           },
           ["sketch"]),
     _spec("describe_sketch",
@@ -117,8 +150,10 @@ SPECS = [
           ["sketch", "indices"]),
     _spec("delete_object",
           "Delete a whole object -- a sketch, a pad, a pocket -- from the "
-          "document. Deleting a sketch that a pad depends on will break the "
-          "pad, so check with list_objects first.",
+          "document. Deleting a feature also deletes the sketch it was made "
+          "from, when nothing else uses it, and keeps the rest of the body "
+          "joined up. A sketch that a feature is made from is refused: "
+          "delete the feature instead.",
           {
               "name": {"type": "string", "description": "The object's label or internal name."},
           },
@@ -221,7 +256,8 @@ SPECS = [
           },
           ["name", "new_name"]),
     _spec("move_object",
-          "Move a sketch or a body. Absolute position by default; set "
+          "Move a sketch or a whole body -- the way to put one part where "
+          "it sits against another. Absolute position by default; set "
           "relative to shift it from where it is. This will not move a pad, "
           "pocket or pattern -- those take their position from the body and "
           "the sketch they were made from, and it says so rather than "
@@ -245,7 +281,8 @@ SPECS = [
           ["name", "angle"]),
     _spec("set_sketch_plane",
           "Re-attach a sketch to a different origin plane, or to the face "
-          "the user has clicked.",
+          "the user has clicked. The reply says where its (0, 0) now is and "
+          "which way its X and Y run.",
           {
               "sketch": {"type": "string", "description": "Name of the sketch."},
               "plane": {"type": "string", "enum": ["XY", "XZ", "YZ", "selection"], "description": "Where to put it."},
@@ -317,6 +354,14 @@ SPECS = [
           {
               "name": {"type": "string", "description": "What to call it. Optional."},
           }),
+    _spec("switch_document",
+          "Make another open document the active one. Every tool works on "
+          "the active document, and every reply starts with its name in "
+          "square brackets -- check it before exporting.",
+          {
+              "name": {"type": "string", "description": "The document's name, as a reply or list_objects shows it."},
+          },
+          ["name"]),
     _spec("undo",
           "Undo the last change. Use this when you have just done something "
           "the user did not want."),
@@ -338,11 +383,14 @@ SPECS = [
     _spec("export_mesh",
           "Write a triangle mesh for slicing and printing. Unless the user "
           "already named a format, leave format out and they are asked which "
-          "one -- it depends on their slicer, which you cannot see.",
+          "one -- it depends on their slicer, which you cannot see. The reply "
+          "gives the document, size and volume of what was written: check "
+          "them against the part you meant.",
           {
               "path": {"type": "string", "description": "Where to write the file."},
               "format": {"type": "string", "enum": ["stl", "3mf", "obj"], "description": "Only if the user named one. Leave it out otherwise and they are asked -- do not choose for them."},
               "name": {"type": "string", "description": "Which body to export. Defaults to the only one."},
+              "document": {"type": "string", "description": "Which open document to export from. Give it whenever more than one is open."},
           },
           ["path"]),
     _spec("export_step",
@@ -351,6 +399,7 @@ SPECS = [
           {
               "path": {"type": "string", "description": "Where to write the file."},
               "name": {"type": "string", "description": "Which body to export. Defaults to the only one."},
+              "document": {"type": "string", "description": "Which open document to export from. Give it whenever more than one is open."},
           },
           ["path"]),
 ]

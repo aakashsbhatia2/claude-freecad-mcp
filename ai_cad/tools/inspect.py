@@ -2,7 +2,7 @@
 
 import FreeCADGui
 
-from ai_cad.util import document, find, rounded, vector
+from ai_cad.util import body_of, document, find, rounded, solid_volume, vector
 
 # Origin planes and axes are in every Body and only add noise.
 NOISE = ("App::Origin", "App::Plane", "App::Line", "App::LocalCoordinateSystem")
@@ -20,6 +20,9 @@ def list_objects(_arguments):
         line = "%s (%s)" % (obj.Label, obj.TypeId)
         if obj.Label != obj.Name:
             line += " [internal name %s]" % obj.Name
+        body = body_of(obj)
+        if body is not None:
+            line += " in %s" % body.Label
         lines.append(line)
 
     if not lines:
@@ -142,7 +145,73 @@ def describe_object(arguments):
     return "\n".join(lines)
 
 
+# Below this an overlap is the boolean's own rounding, not material.
+OVERLAP_NOISE = 1e-3    # mm3
+TOUCHING = 1e-4         # mm
+
+
+def _solid_for(name):
+    """A whole part to test, from a body's name or anything inside one."""
+    obj = find(name)
+    if obj is None:
+        return None, None, "There is no object called '%s'." % name
+    if obj.TypeId != "PartDesign::Body":
+        body = body_of(obj)
+        if body is not None:
+            obj = body
+    if solid_volume(obj) <= 0:
+        return None, None, "%s has no solid to test yet." % obj.Label
+    return obj, obj.Shape, None
+
+
+def check_interference(arguments):
+    """Whether two parts overlap, touch, or clear each other -- and by how much.
+
+    Both shapes are in model coordinates, body placement included, so this
+    is the parts as they sit, not as they were drawn.
+    """
+    a, shape_a, error = _solid_for(arguments.get("body_a"))
+    if error:
+        return error
+    b, shape_b, error = _solid_for(arguments.get("body_b"))
+    if error:
+        return error
+    if a is b:
+        return ("Both of those are %s -- one solid cannot collide with itself. "
+                "Parts that must be checked against each other have to be "
+                "separate bodies: see create_body." % a.Label)
+
+    overlap = shape_a.common(shape_b)
+    volume = overlap.Volume if not overlap.isNull() and overlap.Solids else 0.0
+    if volume > OVERLAP_NOISE:
+        box = overlap.BoundBox
+        pieces = len(overlap.Solids)
+        where = ("in one piece" if pieces == 1 else "in %d separate places" % pieces)
+        return ("OVERLAPPING: %s and %s share %s mm3, %s. All of it lies "
+                "inside x %s to %s, y %s to %s, z %s to %s (a box %s x %s x "
+                "%s mm -- the overlap itself can be much thinner). As "
+                "printed, these will not go together." % (
+                    a.Label, b.Label, rounded(volume, 3), where,
+                    rounded(box.XMin), rounded(box.XMax),
+                    rounded(box.YMin), rounded(box.YMax),
+                    rounded(box.ZMin), rounded(box.ZMax),
+                    rounded(box.XLength), rounded(box.YLength), rounded(box.ZLength)))
+
+    gap, pairs, _info = shape_a.distToShape(shape_b)
+    near_a, near_b = pairs[0]
+    if gap < TOUCHING:
+        return ("TOUCHING, NO GAP: %s and %s meet at %s without overlapping. "
+                "Drawn that way they fit exactly, which printed parts do not: "
+                "if one slides into or sits against the other, give it "
+                "clearance." % (a.Label, b.Label, vector(near_a)))
+    return ("CLEAR: %s and %s do not touch. The smallest gap is %s mm, "
+            "between %s on %s and %s on %s." % (
+                a.Label, b.Label, rounded(gap, 3),
+                vector(near_a), a.Label, vector(near_b), b.Label))
+
+
 HANDLERS = {
+    "check_interference": check_interference,
     "list_objects": list_objects,
     "describe_selection": describe_selection,
     "describe_object": describe_object,
