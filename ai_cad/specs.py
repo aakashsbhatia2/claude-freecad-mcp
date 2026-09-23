@@ -348,6 +348,22 @@ SPECS = [
           ["feature"]),
 
     # document
+    # dimensions
+    _spec("mark_dimensions",
+          "Write every driving number of the model into the 3D view, so the "
+          "user can check the dimensions against the part in FreeCAD rather "
+          "than against a list in chat. Sketch distances become dimension "
+          "lines; diameters, radii and angles become text. Each is named for "
+          "the sketch and constraint number behind it, so a wrong one says "
+          "what to change with set_dimension. They are grouped per sketch, "
+          "change nothing about the solid or the export, and marking again "
+          "replaces them rather than stacking.",
+          {
+              "body": {"type": "string", "description": "Only this body's sketches. Optional."},
+              "sketch": {"type": "string", "description": "Only this one sketch. Optional."},
+          }),
+    _spec("clear_dimensions",
+          "Remove the dimension marks that mark_dimensions put in the 3D view."),
     _spec("new_document",
           "Start a new, empty FreeCAD document. Only needed when nothing is "
           "open -- the sketch tools make one on their own.",

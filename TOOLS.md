@@ -54,6 +54,13 @@ The complete set. Anything not listed here, it cannot do.
 | `set_sketch_plane` | Re-attaches a sketch to a different plane or face, with the same optional offset |
 | `delete_object` | Deletes a sketch, pad or pocket, along with the sketch it was made from, without breaking the rest |
 
+### Reviewing the numbers
+
+| Tool | What it does |
+|---|---|
+| `mark_dimensions` | Writes the model's driving numbers into the 3D view as dimension lines and labels |
+| `clear_dimensions` | Takes them away again |
+
 ### The document
 
 | Tool | What it does |

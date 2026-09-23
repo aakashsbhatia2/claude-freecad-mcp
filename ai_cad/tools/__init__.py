@@ -5,6 +5,7 @@
     edit      change what exists: dimensions, properties, placement
     dress     fillets, chamfers, holes
     pattern   repeat and mirror features
+    dimensio  write the model's own numbers into the 3D view
     document  undo, save, view, measure, export
 
 All of them run on the GUI thread -- FreeCAD documents are not safe to touch
@@ -16,9 +17,10 @@ import importlib
 import FreeCAD
 
 from ai_cad import specs, util
-from ai_cad.tools import build, document, dress, edit, inspect, pattern
+from ai_cad.tools import (build, dimensions, document, dress, edit, inspect,
+                          pattern)
 
-MODULES = (inspect, build, edit, dress, pattern, document)
+MODULES = (inspect, build, edit, dress, pattern, dimensions, document)
 
 # What each tool does lives in ai_cad/specs.py, outside this package because
 # opening this one imports FreeCAD -- and the MCP server has to read the
