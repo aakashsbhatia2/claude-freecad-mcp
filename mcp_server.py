@@ -26,6 +26,7 @@ sys.path.insert(0, HERE)
 
 from ai_cad import socket_path               # noqa: E402  (needs the path above)
 from ai_cad.specs import SPECS               # noqa: E402
+from ai_cad import prompts                    # noqa: E402
 
 CONNECT_TIMEOUT = 2
 CALL_TIMEOUT = 150          # longer than the bridge's own, so it answers first
@@ -33,18 +34,7 @@ CALL_TIMEOUT = 150          # longer than the bridge's own, so it answers first
 NO_FREECAD = ("FreeCAD isn't running, so there is nothing to work on. Ask the "
               "user to open FreeCAD, then try again.")
 
-INSTRUCTIONS = (
-    "These tools drive a running FreeCAD for a user who models functional "
-    "parts for 3D printing. "
-    "Dimensions are in millimetres unless the user says otherwise. "
-    "Before drawing in a sketch, list what is already in it -- if the user "
-    "asks to change a size, change the constraint that drives it rather than "
-    "adding a second shape on top. "
-    "Refer to objects by the exact names the tools give back; never invent a "
-    "name. If a name is not found, call list_objects and use what it reports. "
-    "When the user says 'this' or 'that' they mean whatever they have clicked "
-    "in FreeCAD: call describe_selection to find out what that is."
-)
+INSTRUCTIONS = prompts.load("instructions")
 
 TOOLS = [{"name": spec["function"]["name"],
           "description": spec["function"]["description"],
@@ -207,7 +197,7 @@ def handle(method, params):
             # here behaves differently between revisions.
             "protocolVersion": params.get("protocolVersion", "2024-11-05"),
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "freecad", "version": "0.4.0"},
+            "serverInfo": {"name": "freecad", "version": "0.4.1"},
             "instructions": INSTRUCTIONS,
         }
     if method == "ping":
