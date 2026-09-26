@@ -7,5 +7,6 @@ select a face and then talk about it.
 
 - [Installing](INSTALL.md)
 - [Tools](TOOLS.md)
+- [Debug mode](DEBUG_MODE.md)
 
 LGPL 2.1 or later.

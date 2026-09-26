@@ -20,13 +20,14 @@ import json
 import os
 import socket
 import sys
+import time
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, HERE)
 
 from ai_cad import socket_path               # noqa: E402  (needs the path above)
 from ai_cad.specs import SPECS               # noqa: E402
-from ai_cad import prompts                    # noqa: E402
+from ai_cad import debug, prompts            # noqa: E402
 
 CONNECT_TIMEOUT = 2
 CALL_TIMEOUT = 150          # longer than the bridge's own, so it answers first
@@ -197,7 +198,7 @@ def handle(method, params):
             # here behaves differently between revisions.
             "protocolVersion": params.get("protocolVersion", "2024-11-05"),
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "freecad", "version": "0.4.1"},
+            "serverInfo": {"name": "freecad", "version": "0.4.2"},
             "instructions": INSTRUCTIONS,
         }
     if method == "ping":
@@ -205,7 +206,19 @@ def handle(method, params):
     if method == "tools/list":
         return {"tools": TOOLS}
     if method == "tools/call":
-        return call_tool(params.get("name"), params.get("arguments"))
+        started = time.time()
+        result = call_tool(params.get("name"), params.get("arguments"))
+        if debug.enabled():
+            debug.record({
+                "time": started,
+                "session": os.getpid(),
+                "tool": params.get("name"),
+                "arguments": params.get("arguments") or {},
+                "ok": not result["isError"],
+                "reply": result["content"][0]["text"],
+                "seconds": round(time.time() - started, 3),
+            })
+        return result
     raise KeyError(method)
 
 
