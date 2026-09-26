@@ -2,7 +2,7 @@
 """MCP server: what Claude Code launches to reach FreeCAD.
 
 Claude Code speaks JSON-RPC to this on stdin and stdout. This forwards each
-call to the bridge inside the running FreeCAD (addon/ai_cad/server.py) over a
+call to the bridge inside the running FreeCAD (ai_cad/server.py) over a
 unix socket, and hands the answer back.
 
 Two rules keep it well behaved:
@@ -207,7 +207,7 @@ def handle(method, params):
             # here behaves differently between revisions.
             "protocolVersion": params.get("protocolVersion", "2024-11-05"),
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "freecad", "version": "0.1.0"},
+            "serverInfo": {"name": "freecad", "version": "0.4.0"},
             "instructions": INSTRUCTIONS,
         }
     if method == "ping":
