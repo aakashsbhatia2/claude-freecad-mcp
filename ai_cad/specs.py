@@ -67,6 +67,30 @@ SPECS = [
           {
               "name": {"type": "string", "description": "What to call it, e.g. splice or hex_nut."},
           }),
+    _spec("link_object",
+          "Place copies of a whole part that stay the same as it -- twelve "
+          "identical panels, nine trays. Build the part once, then link it: "
+          "each copy shows the original's shape and changes when the "
+          "original does, so they never drift apart. Never rebuild an "
+          "identical part by hand. Each position is where the copy's origin "
+          "goes, the way move_object places a body. Edit and export the "
+          "original, not the copies.",
+          {
+              "name": {"type": "string", "description": "The body to copy, or anything inside it."},
+              "positions": {
+                  "type": "array",
+                  "description": "One entry per copy, in mm.",
+                  "items": {
+                      "type": "object",
+                      "properties": {
+                          "x": {"type": "number"},
+                          "y": {"type": "number"},
+                          "z": {"type": "number"},
+                      },
+                  },
+              },
+          },
+          ["name", "positions"]),
     _spec("create_sketch",
           "Start a new empty sketch, either on one of the three origin "
           "planes or on the flat face the user has clicked. Creates a body "

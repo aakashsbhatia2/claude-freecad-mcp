@@ -18,6 +18,7 @@ The complete set. Anything not listed here, it cannot do.
 | Tool | What it does |
 |---|---|
 | `create_body` | A new, separate part that is not fused into the others |
+| `link_object` | Copies of a whole part at given positions, which change when the original does |
 | `create_sketch` | New sketch on XY, XZ, YZ, or the face you have clicked, optionally set back from it by a distance |
 | `add_rectangle` | Fully constrained rectangle, by width and height |
 | `add_circle` | Fully constrained circle, by diameter |
@@ -89,6 +90,11 @@ not fused into the others, moves and rotates as a whole with `move_object` and
 `rotate_object`, and can be tested against another with `check_interference`.
 Pads and pockets go into the body their sketch is in. With several bodies and
 none active, `create_sketch` asks which one rather than guessing.
+
+Identical parts are built once and copied with `link_object`. Each copy is a
+FreeCAD Link: it shows the original's shape and follows every change to it,
+and moves, rotates and checks for interference like a body. Edit and export
+the original. The original cannot be deleted while copies of it remain.
 
 `check_interference` gives one of three answers: overlapping (with the shared
 volume and where it is), touching with no gap — a drawn fit that will not go

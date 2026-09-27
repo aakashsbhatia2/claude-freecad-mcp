@@ -16,7 +16,8 @@ import Sketcher
 from FreeCAD import Vector
 
 from ai_cad.util import (body_of, direction, document, facing, find,
-                         orientation, remove_feature, rounded, solid_volume)
+                         orientation, remove_feature, rounded, solid_volume,
+                         vector)
 
 PLANES = {"XY": "XY_Plane", "XZ": "XZ_Plane", "YZ": "YZ_Plane"}
 
@@ -94,6 +95,56 @@ def create_body(arguments):
     if others:
         text += ", separate from %s" % ", ".join(others)
     return text + ". Pass body='%s' to create_sketch to draw in it." % body.Label
+
+
+def link_object(arguments):
+    """Copies of a whole part that follow the original.
+
+    A FreeCAD Link shows the original's shape wherever it is placed, and
+    changes when the original does -- twelve identical panels drawn once
+    rather than rebuilt twelve times and left to drift apart. Its position
+    replaces the original's rather than adding to it, so each copy is placed
+    the way move_object places a body.
+    """
+    obj = find(arguments.get("name"))
+    if obj is None:
+        return "There is no object called '%s'." % arguments.get("name")
+    if obj.TypeId == "App::Link":
+        obj = obj.LinkedObject
+    elif obj.TypeId != "PartDesign::Body":
+        obj = body_of(obj) or obj
+    if obj.TypeId != "PartDesign::Body":
+        return ("%s is not part of a body. Only a whole part can be copied: "
+                "give the body's name." % obj.Label)
+    if solid_volume(obj) <= 0:
+        return "%s has no solid yet, so there is nothing to copy." % obj.Label
+
+    positions = arguments.get("positions") or []
+    if not positions:
+        return "Give at least one position for a copy."
+
+    doc = obj.Document
+    made = []
+    count = len([o for o in obj.InList if o.TypeId == "App::Link"])
+    for number, spot in enumerate(positions, count + 1):
+        link = doc.addObject("App::Link", "Link")
+        link.LinkedObject = obj
+        link.Label = "%s copy %d" % (obj.Label, number)
+        placement = FreeCAD.Placement(obj.Placement)     # keep its rotation
+        placement.Base = Vector(float(spot.get("x", 0.0)),
+                                float(spot.get("y", 0.0)),
+                                float(spot.get("z", 0.0)))
+        link.Placement = placement
+        made.append(link)
+    doc.recompute()
+
+    return ("Made %d linked %s of %s: %s. Each shows %s and changes with it, so "
+            "edit %s, never a copy. Move or turn one with move_object or "
+            "rotate_object, and check fits with check_interference. Export %s "
+            "itself; the copies are for the assembly." % (
+                len(made), "copy" if len(made) == 1 else "copies", obj.Label,
+                ", ".join("%s at %s" % (l.Label, vector(l.Placement.Base)) for l in made),
+                obj.Label, obj.Label, obj.Label))
 
 
 def _origin_plane(body, plane):
@@ -534,6 +585,12 @@ def delete_object(arguments):
     if obj is None:
         return "There is no object called '%s'." % name
 
+    # Deleting the original would leave every copy of it pointing at nothing.
+    copies = [o for o in obj.InList if o.TypeId == "App::Link"]
+    if copies:
+        return ("%s has linked copies: %s. Delete those first." % (
+            obj.Label, ", ".join(c.Label for c in copies)))
+
     if obj.TypeId == "Sketcher::SketchObject":
         users = _users(obj)
         if users:
@@ -775,6 +832,7 @@ def mirror_geometry(arguments):
 
 HANDLERS = {
     "create_body": create_body,
+    "link_object": link_object,
     "create_sketch": create_sketch,
     "add_rectangle": add_rectangle,
     "add_circle": add_circle,

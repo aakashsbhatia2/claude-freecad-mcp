@@ -23,6 +23,8 @@ def list_objects(_arguments):
         body = body_of(obj)
         if body is not None:
             line += " in %s" % body.Label
+        if obj.TypeId == "App::Link" and obj.LinkedObject is not None:
+            line += ", a linked copy of %s" % obj.LinkedObject.Label
         lines.append(line)
 
     if not lines:
@@ -141,6 +143,10 @@ def describe_object(arguments):
     standing = _standing(obj)
     if standing:
         lines.append(standing)
+    if obj.TypeId == "App::Link" and obj.LinkedObject is not None:
+        lines.append("This is a linked copy of %s: it has that shape and changes "
+                     "with it. To change it, change %s." % (
+                         obj.LinkedObject.Label, obj.LinkedObject.Label))
 
     return "\n".join(lines)
 

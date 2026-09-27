@@ -198,7 +198,7 @@ def handle(method, params):
             # here behaves differently between revisions.
             "protocolVersion": params.get("protocolVersion", "2024-11-05"),
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "freecad", "version": "0.4.2"},
+            "serverInfo": {"name": "freecad", "version": "0.5.0"},
             "instructions": INSTRUCTIONS,
         }
     if method == "ping":
